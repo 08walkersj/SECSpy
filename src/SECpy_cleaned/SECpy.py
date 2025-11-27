@@ -1328,10 +1328,12 @@ if __name__== '__main__':
     import matplotlib.pyplot as plt
     import cartopy.crs as ccrs
     import matplotlib as mpl
+    from SECpy_cleaned.Example import ExampleData, ExampleGrid
+    from SECpy_cleaned.Plotting_Tools import features, Geocentric_to_PlateCarree_vector_components
     #Retrieve the SEC pole grid and the evaluation grid
-    node_lons, node_lats, eval_lon, eval_lat= Example.ExampleGrid()
+    node_lons, node_lats, eval_lon, eval_lat= ExampleGrid()
     #Retrieve the magnetometer locations and the magnetometer data
-    South, East, Up, MagLon, MagLat= Example.ExampleData()
+    South, East, Up, MagLon, MagLat= ExampleData()
     #Create a SEC pole object
     poles= SECS(node_lons, node_lats, eval_lon, eval_lat)
     #Calculate a fitting matrix
@@ -1350,23 +1352,23 @@ if __name__== '__main__':
     #Add cartopy features to the subplots
     for ax in axes[:-1]:
         ax.scatter(node_lons, node_lats, transform =ccrs.PlateCarree(), color='red', label= 'SEC Poles', s= 0.5, zorder=50)
-        PlottingTools.features(ax)
+        features(ax)
     #Plot magnetometer locations
     for ax in axes[1:-1]:
         ax.scatter(MagLon, MagLat, transform =ccrs.PlateCarree(), marker= '*', color= 'darkorange', label= 'Magnetometer \n Station', zorder=100)
     #Plot magnetometer data
     axes[-2].set_title('Magnetic Field on Ground') 
-    Je_m, Jn_m = PlottingTools.Geocentric_to_PlateCarree_vector_components(East, -South, MagLat) #Conversion of vectors to platecarree for plotting
+    Je_m, Jn_m = Geocentric_to_PlateCarree_vector_components(East, -South, MagLat) #Conversion of vectors to platecarree for plotting
     MagQ=  axes[-2].quiver(MagLon, MagLat,  Je_m, Jn_m,zorder=100, transform = ccrs.PlateCarree(), scale = (1e-5)/8, color='red', label='Measurements')
     Magqk= axes[-2].quiverkey(MagQ, 0.69, 0.71, 200e-9, r'$200 \ nT$', labelpos='E',
                        coordinates='figure')
     #Plot the magnetic field at the points on the evaluation grid
-    axes[-2].quiver(eval_lon, eval_lat, *PlottingTools.Geocentric_to_PlateCarree_vector_components(*Mag[1:],eval_lat), zorder=100,scale=(1e-5)/8, transform = ccrs.PlateCarree(), color='Black', label='Total Field', alpha=0.7)
+    axes[-2].quiver(eval_lon, eval_lat, *Geocentric_to_PlateCarree_vector_components(*Mag[1:],eval_lat), zorder=100,scale=(1e-5)/8, transform = ccrs.PlateCarree(), color='Black', label='Total Field', alpha=0.7)
     #Plot the radial component of the magnetic field at the points on the evaluation grid using a matplotlib colour map
     axes[-2].scatter(eval_lon, eval_lat, c= Mag[0], vmin=min(Mag[0]), vmax=max(Mag[0]), cmap=mpl.cm.bwr, transform= ccrs.PlateCarree(), zorder=50)
     #Plot the current at the points on the evaluation grid
     axes[1].set_title('Ionospheric Currents')
-    CurQ=  axes[1].quiver(eval_lon, eval_lat, *PlottingTools.Geocentric_to_PlateCarree_vector_components(*Cur,eval_lat), zorder=100,scale=(1e1)/2, transform = ccrs.PlateCarree(), color='Black', label='Ionospheric Current', alpha=0.7)
+    CurQ=  axes[1].quiver(eval_lon, eval_lat, *Geocentric_to_PlateCarree_vector_components(*Cur,eval_lat), zorder=100,scale=(1e1)/2, transform = ccrs.PlateCarree(), color='Black', label='Ionospheric Current', alpha=0.7)
     Curqk= axes[-1].quiverkey(CurQ, 0.45, 0.71, 500e-3, r'$500 \ Akm^{-1}$', labelpos='E',
                        coordinates='figure')
     #Plot the magnitudes of currents using a matplotlib colour map
@@ -1377,11 +1379,11 @@ if __name__== '__main__':
     scalars= poles.Amplitude(East, South, Up)
     axes[0].scatter(node_lons, node_lats, c= scalars, vmin=-45000, vmax=45000, cmap=mpl.cm.jet, transform= ccrs.PlateCarree(), zorder=50)
     mappable=mpl.cm.ScalarMappable(norm = mpl.colors.Normalize(vmin=-45000, vmax=45000), cmap=mpl.cm.jet)
-    cbar=plt.colorbar(mappable=mappable)
+    cbar=plt.colorbar(mappable=mappable, ax=ax)
     cbar.set_label('Ionospheric SEC Pole Amplitudes', rotation=270, labelpad=30)
     #Create a plot comparing the measurements to the model for validity
     model= poles.Magnetic_Field(East, South, Up, eval_longitude= MagLon, eval_latitude= MagLat)
-    model= model[0], *PlottingTools.Geocentric_to_PlateCarree_vector_components(*model[1:], MagLat) #Conversion of vectors to platecarree
+    model= model[0], *Geocentric_to_PlateCarree_vector_components(*model[1:], MagLat) #Conversion of vectors to platecarree
     axes[-1].plot(np.linspace(-1.1*np.max(np.abs(model))*1e9, 1.1*np.max(np.abs(model))*1e9, 100), np.linspace(-1.1*np.max(np.abs(model))*1e9, 1.1*np.max(np.abs(model))*1e9, 100))
     axes[-1].set_aspect('auto')
     axes[-1].scatter(Up*1e9, model[0]*1e9, label='Up component')
