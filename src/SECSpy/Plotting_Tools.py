@@ -1,4 +1,4 @@
-from .SECS import ArgumentError
+from SECSpy.SECS import ArgumentError
 import numpy as np
 def add_image(ax, url, location=(0.5, 0), zoom=0.3, alpha=1.0):
     """
@@ -298,9 +298,6 @@ def contour_labels(contour, xpad=None, ypad=None, sides=['left', 'right'], rtol=
     if len(sides)==1:
         return labels[0]
     return labels
-
-class ArgumentError(Exception):
-     pass
 def subplot_matchx(axis1, axis2):
     """
 
