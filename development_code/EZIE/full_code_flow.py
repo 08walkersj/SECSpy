@@ -1,10 +1,10 @@
 #%%
 import numpy as np
-from SECpy_cleaned.Filename_tools import date2filename
+from SECSpy.Filename_tools import date2filename
 from secsy import cubedsphere as cs
 import json
 import pandas as pd
-from SECpy_cleaned.user_input_tools import validinput
+from SECSpy.user_input_tools import validinput
 def create_grid(Event_date, glon=False, glat=False, use_sml=False,
                 use_ezie=True, mag_north=False, sat_orb=True, t_offset=5):
     #'../../Data/SM_Indices_2025.csv'
@@ -100,7 +100,7 @@ def plot_pass(Event_date, save=True):
     from apexpy import Apex
     from secsy import cubedsphere as cs
     import json
-    from SECpy_cleaned.Filename_tools import date2filename
+    from SECSpy.Filename_tools import date2filename
     import os
 
 
@@ -178,7 +178,7 @@ def download_data(Event_date):
 
 def run_inversion(times, Event_date, l2=1e2, l3=1e1):
 
-    from SECpy_cleaned.SECpy import SECS, RE
+    from SECSpy.SECS import SECS, RE
     from apexpy import Apex
     import xarray as xr
     save_option=True
@@ -317,12 +317,12 @@ def create_figure(Event_date, t=0, fig=False, ezie_pass=True, save=False):
     import matplotlib.pyplot as plt
     import xarray as xr
     from secsy import cubedsphere as cs
-    from SECpy_cleaned.Filename_tools import date2filename
+    from SECSpy.Filename_tools import date2filename
     from apexpy import Apex
     import pandas as pd
     import json
-    from SECpy_cleaned.Subplot_alignment_tools import subplot_align
-    from SECpy_cleaned.Contour_labels import contour_labels
+    from SECSpy.Subplot_alignment_tools import subplot_align
+    from SECSpy.Contour_labels import contour_labels
     import os
     def mlt_contour_fmt(mlt):
         if mlt<0:
@@ -534,5 +534,5 @@ fig= create_figure(Event_date, t=t, ezie_pass=False, save=True)
 for t in range(1, 61):
     fig= create_figure(Event_date, t=t, fig=fig, ezie_pass=False, save=True)
 #%%
-from SECpy_cleaned.animate_png import process_all_folders
+from SECSpy.animate_png import process_all_folders
 process_all_folders(base_folder= f"../../Figures/", num_digits=2, fps=2)

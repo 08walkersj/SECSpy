@@ -1,4 +1,4 @@
-from SECpy_cleaned.SECpy import SECS, RE
+from SECSpy.SECS import SECS, RE
 from apexpy import Apex
 import xarray as xr
 import numpy as np
