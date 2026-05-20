@@ -1,5 +1,5 @@
 import numpy as np
-from .SECpy import theta, RE
+from .SECS import theta, RE
 def GridCheck(longitude, latitude, MagLon, MagLat, GridSpacing_km, limit=20, evaluation_altitude=RE, theta_prime=None):
     """
     Parameters
