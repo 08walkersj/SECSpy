@@ -49,3 +49,6 @@ package-dir = { "" = "src" }
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["SECSpy*"]
+
+[tool.setuptools.package-data]
+SECSpy = ["assets/natural_earth_npz/*.npz"]
