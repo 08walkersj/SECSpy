@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "SECSpy"
+version = "0.1.0"
+description = "Spherical Elementary Current System modelling tools for ionospheric equivalent currents."
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+    { name = "Simon Walker" },
+]
+dependencies = [
+    "numpy",
+    "scipy",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+
+[project.optional-dependencies]
+data = [
+    "apexpy",
+    "chaosmagpy",
+    "pandas",
+]
+plotting = [
+    "matplotlib",
+    "pillow",
+]
+video = [
+    "pillow",
+]
+all = [
+    "apexpy",
+    "chaosmagpy",
+    "matplotlib",
+    "pandas",
+    "pillow",
+]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["SECSpy*"]
