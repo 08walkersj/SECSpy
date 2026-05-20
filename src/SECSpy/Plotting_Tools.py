@@ -1,5 +1,13 @@
 from SECSpy.SECS import ArgumentError
 import numpy as np
+from .natural_earth import (
+    grid_extent as _grid_extent,
+    natural_earth_land_mask,
+    project_natural_earth,
+    projected_parts_to_path,
+)
+
+
 def add_image(ax, url, location=(0.5, 0), zoom=0.3, alpha=1.0):
     """
     Download an image and attach it to a Matplotlib axis as an annotation artist.
@@ -76,77 +84,259 @@ def align_axis_below(reference_axis, lower_axis, pad=0.1):
     return onresize(reference_axis, lower_axis, None)
 
 
-def add_land(ax, grid, resolution='50m', facecolor='darkgreen', **kwargs):
+def add_land(
+    ax,
+    grid,
+    resolution='50m',
+    facecolor='darkgreen',
+    clip=True,
+    require_closed=True,
+    geographic_buffer=2.0,
+    method='mask',
+    mask_size=350,
+    **kwargs,
+):
     """
-    Add land polygons to a map axis using projected coastlines from a grid object.
+    Add Natural Earth land polygons to a cubed-sphere map axis.
+
+    By default this draws a raster land mask evaluated on the cubed-sphere grid.
+    This avoids false polygon fills caused by projection discontinuities in
+    regional views. Set ``method='polygon'`` to use projected polygon patches.
 
     Parameters
     ----------
     ax : object
         Matplotlib axis that will receive the polygon patches.
     grid : object
-        Grid object providing ``projection.get_projected_coastlines()``.
+        Grid object exposing ``projection.geo2cube`` and cubed-sphere extents.
     resolution : str, optional
-        Coastline resolution passed to the grid projection.
+        Bundled Natural Earth resolution: ``"110m"``, ``"50m"``, or ``"10m"``.
     facecolor : str, optional
         Fill color used for land polygons.
+    clip : bool, optional
+        If True, clip land polygons to the cubed-sphere grid extent. The
+        default is True.
+    require_closed : bool, optional
+        If True, skip projected polygon fragments that are not closed rings.
+        This avoids false fills from projection discontinuities. The default is
+        True.
+    geographic_buffer : float, optional
+        Degree buffer around the grid lon/lat extent used before projecting
+        Natural Earth polygons. The default is 2.0.
+    method : {"mask", "polygon"}, optional
+        Rendering method. The default, ``"mask"``, is robust for cubed-sphere
+        regional maps.
+    mask_size : int, optional
+        Number of mask samples in the xi direction when ``method='mask'``.
     **kwargs : dict
         Additional keyword arguments passed to ``PathPatch``.
+
+    Returns
+    -------
+    matplotlib.patches.PathPatch or None
+        Added land patch, or None if no land polygons overlap the grid.
     """
-    from matplotlib.path import Path
-    from matplotlib.patches import PathPatch
+    from matplotlib.colors import ListedColormap
+    from matplotlib.patches import PathPatch, Rectangle
 
     plot_kwargs = dict(facecolor=facecolor, edgecolor='none', zorder=1)
     plot_kwargs.update(kwargs)
-    land_patches = []
-    for cl in grid.projection.get_projected_coastlines(resolution=resolution):
-        x, y = cl
-        if len(x) < 3:
-            continue  # can't form a polygon
-        # Build a closed Path; assume each cl represents a coastline ring
-        verts = np.column_stack([x, y])
-        # ensure closed
-        if not (verts[0] == verts[-1]).all():
-            verts = np.vstack([verts, verts[0]])
+    extent = _grid_extent(grid)
 
-        # Path codes: MOVETO, then LINETO..., then CLOSEPOLY
-        codes = np.full(len(verts), Path.LINETO, dtype=np.uint8)
-        codes[0] = Path.MOVETO
-        codes[-1] = Path.CLOSEPOLY
+    if method == 'mask':
+        mesh_kwargs = dict(zorder=plot_kwargs.pop('zorder', 1), alpha=plot_kwargs.pop('alpha', None))
+        mesh_kwargs.update(kwargs)
+        mesh_kwargs.pop('facecolor', None)
+        mesh_kwargs.pop('edgecolor', None)
+        xi, eta, land_mask = natural_earth_land_mask(
+            grid,
+            resolution=resolution,
+            nx=mask_size,
+            geographic_buffer=geographic_buffer,
+            extent=extent,
+        )
+        values = np.where(land_mask, 1.0, np.nan)
+        return ax.pcolormesh(
+            xi,
+            eta,
+            values,
+            cmap=ListedColormap([facecolor]),
+            shading='nearest',
+            **mesh_kwargs,
+        )
+    if method != 'polygon':
+        raise ValueError("method must be 'mask' or 'polygon'")
 
-        path = Path(verts, codes)
-        patch = PathPatch(path, **plot_kwargs)  # land under outlines/grid
-        land_patches.append(patch)
+    parts = project_natural_earth(
+        grid,
+        "land",
+        resolution=resolution,
+        extent=extent,
+        part_types={"polygon_exterior", "polygon_hole"},
+        geographic_buffer=geographic_buffer,
+        require_closed=require_closed,
+    )
+    path = projected_parts_to_path(parts)
+    if path is None:
+        return None
 
-    for p in land_patches:
-        ax.add_patch(p)
+    land = PathPatch(path, **plot_kwargs)
+    if clip:
+        x0, x1, y0, y1 = extent
+        clip_patch = Rectangle(
+            (x0, y0),
+            x1 - x0,
+            y1 - y0,
+            transform=ax.transData,
+        )
+        land.set_clip_path(clip_patch)
+    ax.add_patch(land)
+    return land
 
 
-def add_ocean(ax, grid, facecolor='#3498db', **kwargs):
+def add_ocean(
+    ax,
+    grid,
+    resolution='50m',
+    facecolor='#3498db',
+    use_natural_earth=False,
+    clip=True,
+    **kwargs,
+):
     """
-    Add a rectangular ocean background patch covering the full grid extent.
+    Add ocean to a cubed-sphere map axis.
+
+    By default this draws a rectangular water background over the full
+    cubed-sphere grid extent, which is the robust choice for regional grids.
+    Set ``use_natural_earth=True`` to draw the bundled Natural Earth ocean
+    polygons instead.
 
     Parameters
     ----------
     ax : object
         Matplotlib axis that will receive the rectangle patch.
     grid : object
-        Grid object exposing ``xi_min``, ``xi_max``, ``eta_min``, and ``eta_max``.
+        Grid object exposing ``projection.geo2cube`` and cubed-sphere extents.
+    resolution : str, optional
+        Bundled Natural Earth resolution: ``"110m"``, ``"50m"``, or ``"10m"``.
     facecolor : str, optional
-        Fill color used for the ocean patch.
+        Fill color used for the ocean.
+    use_natural_earth : bool, optional
+        If True, draw Natural Earth ocean polygons. If False, draw a rectangle
+        over the full grid extent. The default is False.
+    clip : bool, optional
+        If True, clip the patch to the grid extent. The default is True.
     **kwargs : dict
         Additional keyword arguments passed to ``Rectangle``.
+
+    Returns
+    -------
+    matplotlib.patches.Patch or None
+        Added ocean patch, or None if no Natural Earth ocean polygons overlap
+        the grid.
     """
-    from matplotlib.patches import Rectangle
+    from matplotlib.patches import PathPatch, Rectangle
 
     plot_kwargs = dict(facecolor=facecolor, edgecolor='none', zorder=-5)
     plot_kwargs.update(kwargs)
 
-    x0, x1 = grid.xi_min, grid.xi_max
-    y0, y1 = grid.eta_min, grid.eta_max
+    x0, x1, y0, y1 = _grid_extent(grid)
+    if use_natural_earth:
+        parts = project_natural_earth(
+            grid,
+            "ocean",
+            resolution=resolution,
+            extent=(x0, x1, y0, y1),
+            part_types={"polygon_exterior", "polygon_hole"},
+        )
+        path = projected_parts_to_path(parts)
+        if path is not None:
+            ocean_patch = PathPatch(path, **plot_kwargs)
+            if clip:
+                clip_patch = Rectangle(
+                    (x0, y0),
+                    x1 - x0,
+                    y1 - y0,
+                    transform=ax.transData,
+                )
+                ocean_patch.set_clip_path(clip_patch)
+            ax.add_patch(ocean_patch)
+            return ocean_patch
 
     ocean_patch = Rectangle((x0, y0), x1 - x0, y1 - y0, **plot_kwargs)
+    ocean_patch.set_clip_on(clip)
     ax.add_patch(ocean_patch)
+    return ocean_patch
+
+
+def add_natural_earth_feature(
+    ax,
+    grid,
+    layer,
+    resolution='50m',
+    facecolor='none',
+    edgecolor='black',
+    linewidth=0.5,
+    clip=True,
+    geographic_buffer=2.0,
+    **kwargs,
+):
+    """
+    Add any bundled Natural Earth feature to a cubed-sphere map axis.
+
+    Polygon layers (``land``, ``ocean``, ``lakes``) are returned as a
+    ``PathPatch``. Line layers (``coastline``, ``borders``,
+    ``states_provinces``, ``rivers_lake_centerlines``) are returned as a
+    ``LineCollection``.
+    """
+    from matplotlib.collections import LineCollection
+    from matplotlib.patches import PathPatch, Rectangle
+
+    extent = _grid_extent(grid)
+    polygon_layer = layer in {"land", "ocean", "lakes"}
+    parts = project_natural_earth(
+        grid,
+        layer,
+        resolution=resolution,
+        extent=extent,
+        geographic_buffer=geographic_buffer,
+        require_closed=polygon_layer,
+    )
+    if not parts:
+        return None
+
+    if polygon_layer:
+        plot_kwargs = dict(
+            facecolor=facecolor,
+            edgecolor=edgecolor,
+            linewidth=linewidth,
+        )
+        plot_kwargs.update(kwargs)
+        artist = PathPatch(projected_parts_to_path(parts), **plot_kwargs)
+    else:
+        plot_kwargs = dict(colors=edgecolor, linewidths=linewidth)
+        plot_kwargs.update(kwargs)
+        segments = [
+            np.column_stack([part["x"], part["y"]])
+            for part in parts
+            if len(part["x"]) >= 2
+        ]
+        if not segments:
+            return None
+        artist = LineCollection(segments, **plot_kwargs)
+
+    if clip:
+        x0, x1, y0, y1 = extent
+        clip_patch = Rectangle(
+            (x0, y0),
+            x1 - x0,
+            y1 - y0,
+            transform=ax.transData,
+        )
+        artist.set_clip_path(clip_patch)
+    ax.add_artist(artist)
+    return artist
+
 
 def contour_labels(contour, xpad=None, ypad=None, sides=['left', 'right'], rtol=.1, fmt=lambda x: f'{x}', x_splits=None, y_splits=None, **text_kwargs):
     """
