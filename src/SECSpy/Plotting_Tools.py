@@ -3,9 +3,27 @@ import numpy as np
 from .natural_earth import (
     grid_extent as _grid_extent,
     natural_earth_land_mask,
+    natural_earth_polygon_mask,
     project_natural_earth,
     projected_parts_to_path,
 )
+
+
+def _natural_earth_axis_state(ax):
+    state = getattr(ax, "_secspy_natural_earth_state", None)
+    if state is None:
+        state = {}
+        ax._secspy_natural_earth_state = state
+    return state
+
+
+def _remove_artist(artist):
+    if artist is None:
+        return
+    try:
+        artist.remove()
+    except ValueError:
+        pass
 
 
 def add_image(ax, url, location=(0.5, 0), zoom=0.3, alpha=1.0):
@@ -84,191 +102,6 @@ def align_axis_below(reference_axis, lower_axis, pad=0.1):
     return onresize(reference_axis, lower_axis, None)
 
 
-def add_land(
-    ax,
-    grid,
-    resolution='50m',
-    facecolor='darkgreen',
-    clip=True,
-    require_closed=True,
-    geographic_buffer=2.0,
-    method='mask',
-    mask_size=350,
-    **kwargs,
-):
-    """
-    Add Natural Earth land polygons to a cubed-sphere map axis.
-
-    By default this draws a raster land mask evaluated on the cubed-sphere grid.
-    This avoids false polygon fills caused by projection discontinuities in
-    regional views. Set ``method='polygon'`` to use projected polygon patches.
-
-    Parameters
-    ----------
-    ax : object
-        Matplotlib axis that will receive the polygon patches.
-    grid : object
-        Grid object exposing ``projection.geo2cube`` and cubed-sphere extents.
-    resolution : str, optional
-        Bundled Natural Earth resolution: ``"110m"``, ``"50m"``, or ``"10m"``.
-    facecolor : str, optional
-        Fill color used for land polygons.
-    clip : bool, optional
-        If True, clip land polygons to the cubed-sphere grid extent. The
-        default is True.
-    require_closed : bool, optional
-        If True, skip projected polygon fragments that are not closed rings.
-        This avoids false fills from projection discontinuities. The default is
-        True.
-    geographic_buffer : float, optional
-        Degree buffer around the grid lon/lat extent used before projecting
-        Natural Earth polygons. The default is 2.0.
-    method : {"mask", "polygon"}, optional
-        Rendering method. The default, ``"mask"``, is robust for cubed-sphere
-        regional maps.
-    mask_size : int, optional
-        Number of mask samples in the xi direction when ``method='mask'``.
-    **kwargs : dict
-        Additional keyword arguments passed to ``PathPatch``.
-
-    Returns
-    -------
-    matplotlib.patches.PathPatch or None
-        Added land patch, or None if no land polygons overlap the grid.
-    """
-    from matplotlib.colors import ListedColormap
-    from matplotlib.patches import PathPatch, Rectangle
-
-    plot_kwargs = dict(facecolor=facecolor, edgecolor='none', zorder=1)
-    plot_kwargs.update(kwargs)
-    extent = _grid_extent(grid)
-
-    if method == 'mask':
-        mesh_kwargs = dict(zorder=plot_kwargs.pop('zorder', 1), alpha=plot_kwargs.pop('alpha', None))
-        mesh_kwargs.update(kwargs)
-        mesh_kwargs.pop('facecolor', None)
-        mesh_kwargs.pop('edgecolor', None)
-        xi, eta, land_mask = natural_earth_land_mask(
-            grid,
-            resolution=resolution,
-            nx=mask_size,
-            geographic_buffer=geographic_buffer,
-            extent=extent,
-        )
-        values = np.where(land_mask, 1.0, np.nan)
-        return ax.pcolormesh(
-            xi,
-            eta,
-            values,
-            cmap=ListedColormap([facecolor]),
-            shading='nearest',
-            **mesh_kwargs,
-        )
-    if method != 'polygon':
-        raise ValueError("method must be 'mask' or 'polygon'")
-
-    parts = project_natural_earth(
-        grid,
-        "land",
-        resolution=resolution,
-        extent=extent,
-        part_types={"polygon_exterior", "polygon_hole"},
-        geographic_buffer=geographic_buffer,
-        require_closed=require_closed,
-    )
-    path = projected_parts_to_path(parts)
-    if path is None:
-        return None
-
-    land = PathPatch(path, **plot_kwargs)
-    if clip:
-        x0, x1, y0, y1 = extent
-        clip_patch = Rectangle(
-            (x0, y0),
-            x1 - x0,
-            y1 - y0,
-            transform=ax.transData,
-        )
-        land.set_clip_path(clip_patch)
-    ax.add_patch(land)
-    return land
-
-
-def add_ocean(
-    ax,
-    grid,
-    resolution='50m',
-    facecolor='#3498db',
-    use_natural_earth=False,
-    clip=True,
-    **kwargs,
-):
-    """
-    Add ocean to a cubed-sphere map axis.
-
-    By default this draws a rectangular water background over the full
-    cubed-sphere grid extent, which is the robust choice for regional grids.
-    Set ``use_natural_earth=True`` to draw the bundled Natural Earth ocean
-    polygons instead.
-
-    Parameters
-    ----------
-    ax : object
-        Matplotlib axis that will receive the rectangle patch.
-    grid : object
-        Grid object exposing ``projection.geo2cube`` and cubed-sphere extents.
-    resolution : str, optional
-        Bundled Natural Earth resolution: ``"110m"``, ``"50m"``, or ``"10m"``.
-    facecolor : str, optional
-        Fill color used for the ocean.
-    use_natural_earth : bool, optional
-        If True, draw Natural Earth ocean polygons. If False, draw a rectangle
-        over the full grid extent. The default is False.
-    clip : bool, optional
-        If True, clip the patch to the grid extent. The default is True.
-    **kwargs : dict
-        Additional keyword arguments passed to ``Rectangle``.
-
-    Returns
-    -------
-    matplotlib.patches.Patch or None
-        Added ocean patch, or None if no Natural Earth ocean polygons overlap
-        the grid.
-    """
-    from matplotlib.patches import PathPatch, Rectangle
-
-    plot_kwargs = dict(facecolor=facecolor, edgecolor='none', zorder=-5)
-    plot_kwargs.update(kwargs)
-
-    x0, x1, y0, y1 = _grid_extent(grid)
-    if use_natural_earth:
-        parts = project_natural_earth(
-            grid,
-            "ocean",
-            resolution=resolution,
-            extent=(x0, x1, y0, y1),
-            part_types={"polygon_exterior", "polygon_hole"},
-        )
-        path = projected_parts_to_path(parts)
-        if path is not None:
-            ocean_patch = PathPatch(path, **plot_kwargs)
-            if clip:
-                clip_patch = Rectangle(
-                    (x0, y0),
-                    x1 - x0,
-                    y1 - y0,
-                    transform=ax.transData,
-                )
-                ocean_patch.set_clip_path(clip_patch)
-            ax.add_patch(ocean_patch)
-            return ocean_patch
-
-    ocean_patch = Rectangle((x0, y0), x1 - x0, y1 - y0, **plot_kwargs)
-    ocean_patch.set_clip_on(clip)
-    ax.add_patch(ocean_patch)
-    return ocean_patch
-
-
 def add_natural_earth_feature(
     ax,
     grid,
@@ -284,15 +117,173 @@ def add_natural_earth_feature(
     """
     Add any bundled Natural Earth feature to a cubed-sphere map axis.
 
-    Polygon layers (``land``, ``ocean``, ``lakes``) are returned as a
-    ``PathPatch``. Line layers (``coastline``, ``borders``,
-    ``states_provinces``, ``rivers_lake_centerlines``) are returned as a
-    ``LineCollection``.
+    ``land`` and ``ocean`` use the robust SECSpy-specific renderers by default:
+    land is drawn as a cubed-sphere raster mask, and ocean is drawn as the map
+    water background. Other polygon and line layers are projected from the
+    bundled Natural Earth vectors.
+
+    ``land`` returns a ``QuadMesh`` by default, ``ocean`` returns a background
+    patch, other polygon layers return a ``PathPatch``, and line layers
+    (``coastline``, ``borders``, ``states_provinces``,
+    ``rivers_lake_centerlines``) return a ``LineCollection``.
     """
     from matplotlib.collections import LineCollection
+    from matplotlib.colors import ListedColormap
     from matplotlib.patches import PathPatch, Rectangle
 
     extent = _grid_extent(grid)
+    state = _natural_earth_axis_state(ax)
+
+    if layer == 'land':
+        if facecolor == 'none':
+            facecolor = 'darkgreen'
+        _remove_artist(state.pop('ocean_land_background', None))
+        method = kwargs.pop('method', 'mask')
+        mask_size = kwargs.pop('mask_size', 350)
+        require_closed = kwargs.pop('require_closed', True)
+        if method == 'mask':
+            mesh_kwargs = dict(zorder=kwargs.pop('zorder', 1))
+            if 'alpha' in kwargs:
+                mesh_kwargs['alpha'] = kwargs.pop('alpha')
+            mesh_kwargs.update(kwargs)
+            mesh_kwargs.pop('facecolor', None)
+            mesh_kwargs.pop('edgecolor', None)
+            xi, eta, land_mask = natural_earth_land_mask(
+                grid,
+                resolution=resolution,
+                nx=mask_size,
+                geographic_buffer=geographic_buffer,
+                extent=extent,
+            )
+            values = np.where(land_mask, 1.0, np.nan)
+            artist = ax.pcolormesh(
+                xi,
+                eta,
+                values,
+                cmap=ListedColormap([facecolor]),
+                shading='nearest',
+                **mesh_kwargs,
+            )
+            state['land'] = artist
+            return artist
+        if method != 'polygon':
+            raise ValueError("land method must be 'mask' or 'polygon'")
+
+        plot_kwargs = dict(facecolor=facecolor, edgecolor=edgecolor, linewidth=linewidth)
+        plot_kwargs.update(kwargs)
+        parts = project_natural_earth(
+            grid,
+            "land",
+            resolution=resolution,
+            extent=extent,
+            part_types={"polygon_exterior", "polygon_hole"},
+            geographic_buffer=geographic_buffer,
+            require_closed=require_closed,
+        )
+        path = projected_parts_to_path(parts)
+        if path is None:
+            return None
+        artist = PathPatch(path, **plot_kwargs)
+        if clip:
+            x0, x1, y0, y1 = extent
+            artist.set_clip_path(Rectangle(
+                (x0, y0),
+                x1 - x0,
+                y1 - y0,
+                transform=ax.transData,
+            ))
+        ax.add_patch(artist)
+        state['land'] = artist
+        return artist
+
+    if layer == 'ocean':
+        if facecolor == 'none':
+            facecolor = '#3498db'
+        use_natural_earth = kwargs.pop('use_natural_earth', False)
+        mask_land = kwargs.pop('mask_land', True)
+        mask_size = kwargs.pop('mask_size', 350)
+        plot_kwargs = dict(facecolor=facecolor, edgecolor='none', zorder=-5)
+        plot_kwargs.update(kwargs)
+        x0, x1, y0, y1 = extent
+        if use_natural_earth:
+            parts = project_natural_earth(
+                grid,
+                "ocean",
+                resolution=resolution,
+                extent=extent,
+                part_types={"polygon_exterior", "polygon_hole"},
+                geographic_buffer=geographic_buffer,
+            )
+            path = projected_parts_to_path(parts)
+            if path is not None:
+                artist = PathPatch(path, **plot_kwargs)
+                if clip:
+                    artist.set_clip_path(Rectangle(
+                        (x0, y0),
+                        x1 - x0,
+                        y1 - y0,
+                        transform=ax.transData,
+                    ))
+                ax.add_patch(artist)
+                return artist
+        artist = Rectangle((x0, y0), x1 - x0, y1 - y0, **plot_kwargs)
+        artist.set_clip_on(clip)
+        ax.add_patch(artist)
+        state['ocean'] = artist
+        if mask_land and 'land' not in state and 'ocean_land_background' not in state:
+            xi, eta, land_mask = natural_earth_land_mask(
+                grid,
+                resolution=resolution,
+                nx=mask_size,
+                geographic_buffer=geographic_buffer,
+                extent=extent,
+            )
+            values = np.where(land_mask, 1.0, np.nan)
+            background_land = ax.pcolormesh(
+                xi,
+                eta,
+                values,
+                cmap=ListedColormap([ax.get_facecolor()]),
+                shading='nearest',
+                zorder=plot_kwargs.get('zorder', -5) + 0.1,
+            )
+            state['ocean_land_background'] = background_land
+        return artist
+
+    if layer == 'lakes':
+        if facecolor == 'none':
+            facecolor = '#3498db'
+        method = kwargs.pop('method', 'mask')
+        mask_size = kwargs.pop('mask_size', 350)
+        if method == 'mask':
+            mesh_kwargs = dict(zorder=kwargs.pop('zorder', 1))
+            if 'alpha' in kwargs:
+                mesh_kwargs['alpha'] = kwargs.pop('alpha')
+            mesh_kwargs.update(kwargs)
+            mesh_kwargs.pop('facecolor', None)
+            mesh_kwargs.pop('edgecolor', None)
+            xi, eta, lake_mask = natural_earth_polygon_mask(
+                grid,
+                "lakes",
+                resolution=resolution,
+                nx=mask_size,
+                geographic_buffer=geographic_buffer,
+                extent=extent,
+            )
+            values = np.where(lake_mask, 1.0, np.nan)
+            artist = ax.pcolormesh(
+                xi,
+                eta,
+                values,
+                cmap=ListedColormap([facecolor]),
+                shading='nearest',
+                **mesh_kwargs,
+            )
+            state['lakes'] = artist
+            return artist
+        if method != 'polygon':
+            raise ValueError("lakes method must be 'mask' or 'polygon'")
+
     polygon_layer = layer in {"land", "ocean", "lakes"}
     parts = project_natural_earth(
         grid,
@@ -316,6 +307,8 @@ def add_natural_earth_feature(
     else:
         plot_kwargs = dict(colors=edgecolor, linewidths=linewidth)
         plot_kwargs.update(kwargs)
+        if 'linestyle' in plot_kwargs and 'linestyles' not in plot_kwargs:
+            plot_kwargs['linestyles'] = plot_kwargs.pop('linestyle')
         segments = [
             np.column_stack([part["x"], part["y"]])
             for part in parts

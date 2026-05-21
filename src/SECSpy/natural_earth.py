@@ -20,13 +20,13 @@ AVAILABLE_LAYERS = (
     "states_provinces",
 )
 AVAILABLE_RESOLUTIONS = ("110m", "50m", "10m")
-_LAND_MASK_CACHE = {}
+_POLYGON_MASK_CACHE = {}
 
 
 def clear_natural_earth_cache():
     """Clear cached Natural Earth projection and land-mask results."""
     _load_bundle.cache_clear()
-    _LAND_MASK_CACHE.clear()
+    _POLYGON_MASK_CACHE.clear()
 
 
 def _asset_path(resolution):
@@ -218,8 +218,9 @@ def _points_in_polygon(x, y, polygon_x, polygon_y):
     return inside
 
 
-def natural_earth_land_mask(
+def natural_earth_polygon_mask(
     grid_or_projection,
+    layer,
     resolution="50m",
     nx=500,
     ny=None,
@@ -227,7 +228,7 @@ def natural_earth_land_mask(
     extent=None,
 ):
     """
-    Return a raster land mask on a cubed-sphere grid.
+    Return a raster polygon-layer mask on a cubed-sphere grid.
 
     The mask is evaluated on a regular cubed-sphere ``xi``/``eta`` grid and is
     robust for regional views because no projected polygons are filled.
@@ -238,6 +239,8 @@ def natural_earth_land_mask(
         Two-dimensional cubed-sphere coordinates and a boolean land mask.
     """
     projection = _projection_from_grid(grid_or_projection)
+    if layer not in {"land", "ocean", "lakes"}:
+        raise ValueError(f"Layer {layer!r} is not a polygon mask layer.")
     if extent is None:
         extent = grid_extent(grid_or_projection)
     if ny is None:
@@ -247,6 +250,7 @@ def natural_earth_land_mask(
 
     x0, x1, y0, y1 = extent
     cache_key = (
+        layer,
         id(projection),
         resolution,
         int(nx),
@@ -257,8 +261,8 @@ def natural_earth_land_mask(
         round(float(y0), 12),
         round(float(y1), 12),
     )
-    if cache_key in _LAND_MASK_CACHE:
-        return _LAND_MASK_CACHE[cache_key]
+    if cache_key in _POLYGON_MASK_CACHE:
+        return _POLYGON_MASK_CACHE[cache_key]
 
     xi_1d = np.linspace(x0, x1, int(nx))
     eta_1d = np.linspace(y0, y1, int(ny))
@@ -280,14 +284,14 @@ def natural_earth_land_mask(
         & (lat <= lat_max)
     )
 
-    land = np.zeros(test_lon.shape, dtype=bool)
+    mask = np.zeros(test_lon.shape, dtype=bool)
     flat_lon = test_lon.ravel()
     flat_lat = lat.ravel()
     flat_valid = valid.ravel()
-    flat_land = land.ravel()
+    flat_mask = mask.ravel()
 
     for poly_lon, poly_lat, part_type in iter_natural_earth_parts(
-        "land",
+        layer,
         resolution=resolution,
         part_types={"polygon_exterior", "polygon_hole"},
     ):
@@ -331,13 +335,33 @@ def natural_earth_land_mask(
             poly_lat,
         )
         if part_type == "polygon_hole":
-            flat_land[in_bbox] &= ~contained
+            flat_mask[in_bbox] &= ~contained
         else:
-            flat_land[in_bbox] |= contained
+            flat_mask[in_bbox] |= contained
 
-    result = xi, eta, land
-    _LAND_MASK_CACHE[cache_key] = result
+    result = xi, eta, mask
+    _POLYGON_MASK_CACHE[cache_key] = result
     return result
+
+
+def natural_earth_land_mask(
+    grid_or_projection,
+    resolution="50m",
+    nx=500,
+    ny=None,
+    geographic_buffer=2.0,
+    extent=None,
+):
+    """Return a raster land mask on a cubed-sphere grid."""
+    return natural_earth_polygon_mask(
+        grid_or_projection,
+        "land",
+        resolution=resolution,
+        nx=nx,
+        ny=ny,
+        geographic_buffer=geographic_buffer,
+        extent=extent,
+    )
 
 
 def _clip_polygon_to_boundary(points, inside, intersect):
