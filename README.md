@@ -9,11 +9,16 @@ and plotting.
 The core equations follow:
 
 - Vanhamaki, H., & Juusola, L. (2020), *Introduction to Spherical Elementary
-  Current Systems*
-- Marsal, S., Torta, J. M., Segarra, A., & Araki, T. (2017), performance
-  parameter formulation for SECS reconstructions
-- Juusola, L. et al. (2016), image-current treatment for ground magnetic-field
-  measurements
+  Current Systems*, https://doi.org/10.1007/978-3-030-26732-2_2
+- Marsal, S., Torta, J. M., Segarra, A., & Araki, T. (2016), Use of spherical 
+  elementary currents to map the polar current systems associated with the 
+  geomagnetic sudden commencements on 2013 and 2015 St. Patrick's Day storms. 
+  Journal of Geophysical Research: Space Physics, 122(1), 194–211. 
+  https://doi.org/10.1002/2016JA023166
+- Juusola, L., Kauristie, K., Vanhamäki, H., Aikio, A., & van de Kamp, M. (2016), 
+  Comparison of auroral ionospheric and field-aligned currents derived from Swarm 
+  and ground magnetic field measurements. Journal of Geophysical Research: Space 
+  Physics, 122(1), 9729–9748. https://doi.org/10.1002/2016JA022961
 
 ## Repository Layout
 
@@ -61,13 +66,17 @@ are available for common workflows:
 python -m pip install ".[data]"
 python -m pip install ".[plotting]"
 python -m pip install ".[video]"
+python -m pip install ".[ezie]"
 python -m pip install ".[all]"
 ```
 
-Some development and EZIE scripts also use packages such as `secsy`, `xarray`,
-`netCDF4`, `polplot`, `ppigrf`, `astropy`, and project-local helper modules.
-Those scripts should be treated as workflow examples rather than the minimal
-package interface.
+The `ezie` extra now includes `secsy` and `polplot` for experimental EZIE
+workflow support. `chaosmagpy` has been removed from optional dependencies as it
+is not used by the package source.
+
+Some development and EZIE scripts also use packages such as `xarray`,
+`polplot`, and other workflow-specific tools. Those scripts should be treated as
+workflow examples rather than the minimal package interface.
 
 ## Quick Start
 
