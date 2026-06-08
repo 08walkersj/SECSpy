@@ -18,10 +18,8 @@ Space Physics, 122(1), 194–211. https://doi.org/10.1002/2016JA023166
 
 """Module Imports"""
 import numpy as np
+from SECSpy.constants import RE, u0
 
-"""Useful Constants"""
-RE= 6.371E6
-u0= 1.23E-6
 
 """Errors"""
 class ArgumentError(Exception):
