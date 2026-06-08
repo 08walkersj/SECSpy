@@ -7,11 +7,19 @@ The equations referenced in this module are from Vanhamäki, H., &
 Juusola, L. (2020). Introduction to Spherical Elementary Current Systems. 
 In Ionospheric Multi-Spacecraft Analysis Tools (pp. 5–33). Springer 
 International Publishing. https://doi.org/10.1007/978-3-030-26732-2_2
-Equations describing the performance parameter are in Marsal, S., Torta, J. M., 
-Segarra, A., & Araki, T. (2017). Use of spherical elementary currents to map 
+
+Equations describing the performance parameter are from: Marsal, S., Torta, J. M., 
+Segarra, A., & Araki, T. (2016). Use of spherical elementary currents to map 
 the polar current systems associated with the geomagnetic sudden commencements 
 on 2013 and 2015 St. Patrick’s Day storms. Journal of Geophysical Research: 
 Space Physics, 122(1), 194–211. https://doi.org/10.1002/2016JA023166
+
+Image-current treatment is from:
+Juusola, L., Kauristie, K., Vanhamäki, H., Aikio, A., & van de Kamp, M. (2016). 
+Comparison of auroral ionospheric and field-aligned currents derived from Swarm 
+and ground magnetic field measurements. Journal of Geophysical Research: Space 
+Physics, 122(1), 9729–9748. https://doi.org/10.1002/2016JA022961
+
 @author: Simon Walker
 """
 
@@ -341,7 +349,7 @@ def RMSD(observed, modelled, N):
     return np.sqrt(np.sum((observed-modelled)**2, axis=0)/N)
 def Performance_Parameter(observed, modelled, N):
     """
-    Calculates the perfomance parameter of the SECS model, as outlined by equation 6 and 7 in Marsal(2017)
+    Calculates the perfomance parameter of the SECS model, as outlined by equation 6 and 7 in Marsal(2016)
 
     Parameters
     ----------
@@ -1269,7 +1277,7 @@ class SECS:
             raise ArgumentError("Invalid mode selected use either 'default' or 'image'")
     def Performance_Parameter(self, East, South, Up, Magnetometer_Longitude, Magnetometer_Latitude, **kwargs):
         """
-        Calculates the performance parameter for each component at each magnetometer site as specified by equation 6 and 7 in Marsal(2017)
+        Calculates the performance parameter for each component at each magnetometer site as specified by equation 6 and 7 in Marsal(2016)
         Parameters
         ----------
         South : numpy.ndarray (Tesla)
