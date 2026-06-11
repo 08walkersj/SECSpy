@@ -110,7 +110,9 @@ def create_video_from_images(
     folder_path,
     prefix='',
     filename='output',
+    gif_filename=None,
     num_digits=2,
+    start_number=1,
     fps=5,
     audio_path=None,
     audio_volume=1.0,
@@ -134,9 +136,16 @@ def create_video_from_images(
     prefix : str, optional
         Filename prefix before the numeric counter.
     filename : str, optional
-        Base name for the generated ``.mp4`` and optional ``.gif`` files.
+        Base name or path for the generated ``.mp4``. If only a name is
+        supplied, the video is written inside ``folder_path``. If a path is
+        supplied, that path is used. The ``.mp4`` suffix is added when omitted.
+    gif_filename : str, optional
+        Base name or path for the generated ``.gif``. If omitted, the GIF uses
+        the same path stem as ``filename`` with a ``.gif`` suffix.
     num_digits : int, optional
         Number of zero-padded digits in the image sequence counter.
+    start_number : int, optional
+        Number of the first frame in the image sequence.
     fps : int or float, optional
         Output frame rate.
     audio_path : str or path-like, optional
@@ -163,6 +172,17 @@ def create_video_from_images(
     import shlex
     import subprocess
 
+    def resolve_output_path(name, default_folder, suffix):
+        path = os.fspath(name)
+        root, ext = os.path.splitext(path)
+        if not ext:
+            path = path + suffix
+        elif ext.lower() != suffix:
+            path = root + suffix
+        if os.path.dirname(path):
+            return path
+        return os.path.join(default_folder, path)
+
 
     # Use the first PNG to derive a fixed output size for the whole sequence.
     image_files = sorted(f for f in os.listdir(folder_path) if f.lower().endswith('.png'))
@@ -178,7 +198,10 @@ def create_video_from_images(
     scale_filter = f"scale={width}:{height}:flags=lanczos"
 
     input_pattern = os.path.join(folder_path, prefix + f"%0{num_digits}d.png")
-    output_video = os.path.join(folder_path, filename+".mp4")
+    output_video = resolve_output_path(filename, folder_path, '.mp4')
+    output_folder = os.path.dirname(output_video)
+    if output_folder:
+        os.makedirs(output_folder, exist_ok=True)
 
     cmd = [
         "ffmpeg", "-hide_banner", "-stats", "-y",
@@ -186,8 +209,8 @@ def create_video_from_images(
         # ffmpeg requires the sequence framerate before the image input.
         "-framerate", str(fps),
 
-        # Input 0 is the image sequence. This assumes numbering starts at 1.
-        "-start_number", "1",
+        # Input 0 is the image sequence.
+        "-start_number", str(start_number),
         "-i", input_pattern,
     ]
 
@@ -237,10 +260,14 @@ def create_video_from_images(
     print("✅ Created video:", output_video)
     if create_gif:
         # Convert video to GIF using two-pass palette method
-        convert_video_to_gif(output_video, folder_path, width, height, fps=fps, filename=filename)
+        if gif_filename is None:
+            gif_path = os.path.splitext(output_video)[0] + '.gif'
+        else:
+            gif_path = resolve_output_path(gif_filename, folder_path, '.gif')
+        convert_video_to_gif(output_video, gif_path, width, height, fps=fps)
 
 
-def convert_video_to_gif(video_path, folder_path, width, height, fps=5, filename='output'):
+def convert_video_to_gif(video_path, gif_path, width, height, fps=5):
     """
     Convert a video file to a GIF using ffmpeg's palette workflow.
 
@@ -251,23 +278,22 @@ def convert_video_to_gif(video_path, folder_path, width, height, fps=5, filename
     ----------
     video_path : str or path-like
         Path to the source video.
-    folder_path : str or path-like
-        Output folder for the GIF and temporary palette file.
+    gif_path : str or path-like
+        Output path for the GIF.
     width, height : int
         GIF dimensions in pixels.
     fps : int or float, optional
         GIF frame rate.
-    filename : str, optional
-        Base name for the output ``.gif``.
-
     Returns
     -------
     None
     """
     import subprocess
 
-    gif_output = os.path.join(folder_path, filename+'.gif')
-    palette_path = os.path.join(folder_path, 'palette.png')
+    gif_output = os.fspath(gif_path)
+    gif_folder = os.path.dirname(gif_output) or '.'
+    os.makedirs(gif_folder, exist_ok=True)
+    palette_path = os.path.join(gif_folder, 'palette.png')
     scale_filter = f'scale={width}:{height}:flags=lanczos'
 
     # Step 1: Generate palette
