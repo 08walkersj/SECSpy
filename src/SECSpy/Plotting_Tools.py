@@ -8,6 +8,25 @@ from .natural_earth import (
     projected_parts_to_path,
 )
 
+def quiverkey_left_label(fig, qk, text, pad=0.008, **text_kwargs):
+    if not hasattr(qk, 'vector'):
+        qk._init()
+
+    vertices = qk.verts.reshape(-1, 2)
+    vertices_display = qk.vector.get_transform().transform(vertices)
+    offset_display = qk.vector.get_offset_transform().transform(qk.vector.get_offsets()[0])
+    arrow_display = vertices_display + offset_display
+    arrow_figure = fig.transFigure.inverted().transform(arrow_display)
+
+    return fig.text(
+        np.nanmin(arrow_figure[:, 0]) - pad,
+        0.5 * (np.nanmin(arrow_figure[:, 1]) + np.nanmax(arrow_figure[:, 1])),
+        text,
+        transform=fig.transFigure,
+        ha='right',
+        va='center',
+        **text_kwargs,
+    )
 
 def _natural_earth_axis_state(ax):
     state = getattr(ax, "_secspy_natural_earth_state", None)
@@ -370,27 +389,35 @@ def contour_labels(contour, xpad=None, ypad=None, sides=['left', 'right'], rtol=
 
     """
     import numpy as np
+    def iter_level_vertices(contour):
+        if hasattr(contour, 'collections'):
+            for collection, level in zip(contour.collections, contour.levels):
+                paths= collection.get_paths()
+                if len(paths):
+                    yield [path.vertices for path in paths], level
+        elif hasattr(contour, 'allsegs'):
+            for segments, level in zip(contour.allsegs, contour.levels):
+                vertices= [segment for segment in segments if len(segment)]
+                if len(vertices):
+                    yield vertices, level
+        else:
+            raise AttributeError("contour object does not expose collections or allsegs")
+
     ax= contour.axes
     if xpad is None:
         xpad= np.max(np.abs(ax.get_xlim()))*.015
     if ypad is None:
         ypad= np.max(np.abs(ax.get_ylim()))*.015
-    try:
-        if isinstance(sides, (str, np.str)):
-            sides= [sides]
-    except AttributeError:
-        if isinstance(sides, (str)):
-            sides= [sides]
-    if x_splits is None or isinstance(x_splits, (str, np.str)):
+    if isinstance(sides, str):
+        sides= [sides]
+    if x_splits is None or isinstance(x_splits, str):
         x_splits= [x_splits]*len(sides)
-    if y_splits is None or isinstance(y_splits, (str, np.str)):
+    if y_splits is None or isinstance(y_splits, str):
         y_splits= [y_splits]*len(sides)
     labels= [[] for i in range(len(sides))]
-    for collection, level in zip(contour.collections, contour.levels):
-        if not len(collection.get_paths()):
-            continue
+    for vertices, level in iter_level_vertices(contour):
         for i, (side, x_split, y_split) in enumerate(zip(sides, x_splits, y_splits)):
-            x, y= np.concatenate([path.vertices for path in collection.get_paths()], axis=0).T
+            x, y= np.concatenate(vertices, axis=0).T
             if side=='left':
                 if y_split=='negative':
                     x= x[y<0]
