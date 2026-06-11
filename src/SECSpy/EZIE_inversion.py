@@ -48,7 +48,7 @@ class inversion(object):
         self.ezie_l2_file = ezie_l2_file
         self.event_time = event_time
         if inversion_repo is None:
-            self.inversion_repo= f'.Inversions/{date2filename(event_time)}/'
+            self.inversion_repo= f'./Inversions/{date2filename(event_time)}/'
         else:
             self.inversion_repo= inversion_repo
         os.makedirs(self.inversion_repo, exist_ok=True)
@@ -745,7 +745,11 @@ class inversion(object):
             raise ValueError('Username is required to download SuperMAG data.')
         else:
             username= self.username
-        extent= (end-start + np.timedelta64(1, 'm')).astype('timedelta64[s]').astype(int)
+        # SuperMAG returns minute samples from the requested start up to one
+        # minute before start + extent. Because this query starts one minute
+        # before the requested inversion window, include an extra minute so the
+        # requested end time is present for run_inversion().
+        extent= (end-start + np.timedelta64(2, 'm')).astype('timedelta64[s]').astype(int)
         start = self.event_time + start
         xi_min=self.node_grid.xi_min.copy()
         xi_max=self.node_grid.xi_max.copy()
@@ -931,7 +935,19 @@ class inversion(object):
         amps= []
         estimated= []
 
-        for date in tqdm(np.arange(self.event_time+start, self.event_time+end+np.timedelta64(1, 'm'), np.timedelta64(1, 'm')), desc='Running inversion'):
+        inversion_dates = np.arange(self.event_time+start, self.event_time+end+np.timedelta64(1, 'm'), np.timedelta64(1, 'm'))
+        available_dates = set(self.SM_data.Date_UTC.values.astype('datetime64[ns]'))
+        missing_dates = [date for date in inversion_dates.astype('datetime64[ns]') if date not in available_dates]
+        if missing_dates:
+            missing_text = ', '.join(np.datetime_as_string(date, unit='m') for date in missing_dates[:5])
+            if len(missing_dates) > 5:
+                missing_text += f', ... ({len(missing_dates)} total)'
+            raise ValueError(
+                'SuperMAG data are missing requested inversion time(s): '
+                f'{missing_text}. Download a wider data window or rerun download_data().'
+            )
+
+        for date in tqdm(inversion_dates, desc='Running inversion'):
             East_ground= self.SM_data[self.SM_data.Date_UTC==date].E_geo.values*1e-9
             South_ground=-self.SM_data[self.SM_data.Date_UTC==date].N_geo.values*1e-9
             Up_ground= -self.SM_data[self.SM_data.Date_UTC==date].Z_geo.values*1e-9
