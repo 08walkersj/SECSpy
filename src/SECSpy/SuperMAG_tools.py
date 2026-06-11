@@ -172,9 +172,15 @@ def SuperMAGGetInventory(logon, start, extent, *Filtering, **filter_kwargs):
 
 
 def SuperMAGGetIndices(logon, start, extent, flagstring="", **kwargs):
-    return _supermag_api().SuperMAGGetIndices(
+    status, indices = _supermag_api().SuperMAGGetIndices(
         logon, _normalise_start(start), extent, _normalise_flagstring(flagstring), **kwargs
     )
+    if "tval" in indices:
+        indices["Date_UTC"] = (
+            np.datetime64("1970-01-01T00:00")
+            + indices.tval.values.astype("timedelta64[s]")
+        )
+    return status, indices
 
 
 def Dictionary2Column(dic):
