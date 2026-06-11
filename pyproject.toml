@@ -25,22 +25,41 @@ classifiers = [
 [project.optional-dependencies]
 data = [
     "apexpy",
-    "chaosmagpy",
+    "joblib",
     "pandas",
+    "tqdm",
+    "xarray",
 ]
 plotting = [
     "matplotlib",
     "pillow",
 ]
+
+ezie = [
+    "apexpy",
+    "joblib",
+    "pandas",
+    "tqdm",
+    "xarray",
+    "matplotlib",
+    "pillow",
+    "secsy @ git+https://github.com/klaundal/secsy.git",
+    "polplot @ git+https://github.com/klaundal/polplot.git",
+]
+
 video = [
     "pillow",
 ]
 all = [
     "apexpy",
-    "chaosmagpy",
+    "xarray",
+    "joblib",
     "matplotlib",
+    "secsy @ git+https://github.com/klaundal/secsy.git",
+    "polplot @ git+https://github.com/klaundal/polplot.git",
     "pandas",
     "pillow",
+    "tqdm",
 ]
 
 [tool.setuptools]
@@ -51,4 +70,4 @@ where = ["src"]
 include = ["SECSpy*"]
 
 [tool.setuptools.package-data]
-SECSpy = ["assets/natural_earth_npz/*.npz"]
+SECSpy = ["assets/natural_earth_npz/*.npz", "assets/supermag-stations.csv"]

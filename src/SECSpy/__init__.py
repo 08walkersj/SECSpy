@@ -1,3 +1,18 @@
+import warnings
+
+warnings.filterwarnings(
+    'ignore',
+    message='invalid value encountered in divide',
+    category=RuntimeWarning,
+    module=r'secsy\.cubedsphere',
+)
+warnings.filterwarnings(
+    'ignore',
+    message='invalid value encountered in arcsin',
+    category=RuntimeWarning,
+    module=r'secsy\.cubedsphere',
+)
+
 from .SECS import SECS
 from .Example import ExampleData, ExampleGrid
 from .natural_earth import (
