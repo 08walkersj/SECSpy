@@ -1,3 +1,4 @@
+import ssl
 import urllib.request
 
 # the 'certifi' library is required at APL and other sites that
@@ -232,10 +233,10 @@ def sm_GetUrl(fetchurl,fetch='raw'):
     # note that 'cafile' is deprecated past python 3.5 but we keep it here
     # to have stronger backward compatability with earlier versions
     try:
-      cafile=certifi.where()
+      context = ssl.create_default_context(cafile=certifi.where())
     except:
-      cafile=''
-    with urllib.request.urlopen(fetchurl,cafile=cafile) as response:
+      context = None
+    with urllib.request.urlopen(fetchurl, context=context) as response:
       longstring = response.read()
 
       if fetch == 'json':
