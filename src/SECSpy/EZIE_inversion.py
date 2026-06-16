@@ -10,6 +10,7 @@ from SECSpy.utils import date2filename
 import os
 import time
 import tempfile
+from importlib.resources import files as package_files
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
 from polplot import Polarplot as polar
@@ -86,7 +87,6 @@ class inversion(object):
         coordinates before the horizontal heading is normalized.
         """
         ezie = Dataset(self.ezie_l2_file)
-        print(event_time_buffer)
         try:
             time= ezie['Time']['time_utc'][:].astype('datetime64[ns]')
             ind= np.argmax(np.isfinite(ezie['Geolocation'][f'obs_lon{1}'][:].filled(np.nan))&\
@@ -396,6 +396,90 @@ class inversion(object):
 
         raise TypeError(f'Cannot save {filename}: unsupported object type {type(value)}')
 
+    @staticmethod
+    def _relative_state_path(path, state_dir):
+        """Return ``path`` relative to the JSON state directory.
+
+        Parameters
+        ----------
+        path : str, path-like, or None
+            Path to record in a JSON state file.
+        state_dir : str or path-like
+            Directory containing the JSON state file.
+
+        Returns
+        -------
+        str or None
+            Relative path suitable for portable saved-state JSON.
+        """
+        if path is None:
+            return None
+        return os.path.relpath(os.path.abspath(path), os.path.abspath(state_dir))
+
+    @staticmethod
+    def _resolve_state_path(path, state_dir, must_exist=False):
+        """Resolve a path stored in a JSON state file.
+
+        Relative paths are interpreted from the JSON state directory and
+        absolute paths are preserved.
+
+        Parameters
+        ----------
+        path : str, path-like, or None
+            Stored state path.
+        state_dir : str or path-like
+            Directory containing the JSON state file.
+        must_exist : bool, default: False
+            If ``True``, a missing path falls back to ``state_dir``.
+
+        Returns
+        -------
+        str or None
+            Absolute path resolved for the current machine.
+        """
+        if path is None:
+            return None
+
+        path= os.fspath(path)
+        state_dir= os.path.abspath(state_dir)
+        if not os.path.isabs(path):
+            path= os.path.abspath(os.path.join(state_dir, path))
+            if must_exist and not os.path.exists(path):
+                return state_dir
+            return path
+
+        path= os.path.abspath(path)
+        if must_exist and not os.path.exists(path):
+            return state_dir
+        return path
+
+    @staticmethod
+    def _supermag_stations_asset_path():
+        """Return the installed package path for the SuperMAG station asset."""
+        return os.path.abspath(os.fspath(package_files('SECSpy').joinpath('assets', 'supermag-stations.csv')))
+
+    @staticmethod
+    def _is_supermag_stations_asset(path):
+        """Return whether ``path`` points at the packaged station catalogue."""
+        if path is None:
+            return False
+        try:
+            return os.path.samefile(path, inversion._supermag_stations_asset_path())
+        except OSError:
+            return os.path.abspath(os.fspath(path)) == inversion._supermag_stations_asset_path()
+
+    def _save_station_state(self, state_dir):
+        """Save or reference station state without serializing package paths."""
+        if self.stations is None:
+            return None
+        if isinstance(self.stations, (str, os.PathLike)) and self._is_supermag_stations_asset(self.stations):
+            return None
+
+        stations_path= self._save_file_backed_state(self.stations, 'stations.csv', 'csv')
+        if self._is_supermag_stations_asset(stations_path):
+            return None
+        return self._relative_state_path(stations_path, state_dir)
+
     def _repo_path(self, filename, prefix=None):
         """Resolve optional output paths inside ``self.inversion_repo``.
 
@@ -443,18 +527,19 @@ class inversion(object):
             save_file= os.path.join(self.inversion_repo, 'inversion_state.json')
         save_file= os.path.abspath(save_file)
         os.makedirs(os.path.dirname(save_file), exist_ok=True)
+        state_dir= os.path.dirname(save_file)
 
         SM_data_path= self._save_file_backed_state(self.SM_data, 'magnetometer_data.csv', 'csv')
         SML_data_path= self._save_file_backed_state(self.SML_data, 'SML_data.csv', 'csv')
         amplitudes_path= self._save_file_backed_state(self.amplitudes, 'amplitudes.ncdf4', 'netcdf')
         estimated_path= self._save_file_backed_state(self.estimated, 'estimated.ncdf4', 'netcdf')
-        stations_path= self._save_file_backed_state(self.stations, 'stations.csv', 'csv')
+        stations_path= self._save_station_state(state_dir)
 
         state= {
-            'state_file': save_file,
-            'ezie_l2_file': os.path.abspath(self.ezie_l2_file) if self.ezie_l2_file is not None else None,
+            'state_file': os.path.basename(save_file),
+            'ezie_l2_file': self._relative_state_path(self.ezie_l2_file, state_dir) if self.ezie_l2_file is not None else None,
             'event_time': self.event_time,
-            'inversion_repo': os.path.abspath(self.inversion_repo),
+            'inversion_repo': self._relative_state_path(self.inversion_repo, state_dir),
             'sat_heading': self.sat_heading,
             'lon_center': getattr(self, 'lon_center', None),
             'lat_center': getattr(self, 'lat_center', None),
@@ -463,10 +548,10 @@ class inversion(object):
             'l2': self.l2,
             'SECS_kwargs': self.SECS_kwargs,
             'files': {
-                'SM_data': SM_data_path,
-                'SML_data': SML_data_path,
-                'amplitudes': amplitudes_path,
-                'estimated': estimated_path,
+                'SM_data': self._relative_state_path(SM_data_path, state_dir),
+                'SML_data': self._relative_state_path(SML_data_path, state_dir),
+                'amplitudes': self._relative_state_path(amplitudes_path, state_dir),
+                'estimated': self._relative_state_path(estimated_path, state_dir),
                 'stations': stations_path,
             },
             'grids': {
@@ -539,6 +624,7 @@ class inversion(object):
         if path is None:
             return None
         return os.path.abspath(path)
+
     @staticmethod
     def _mlt_contour_fmt(mlt):
         """Format magnetic local time contour labels.
@@ -654,15 +740,20 @@ class inversion(object):
         plotting and inversion methods can load only the data they need.
         """
         save_file= os.path.abspath(save_file)
+        state_dir= os.path.dirname(save_file)
         with open(save_file, 'r') as f:
             state= json.load(f)
 
+        inversion_repo= cls._resolve_state_path(state.get('inversion_repo'), state_dir, must_exist=True)
+        if inversion_repo is None:
+            inversion_repo= state_dir
+
         inv= cls.__new__(cls)
         inv.state_file= save_file
-        inv.ezie_l2_file= state.get('ezie_l2_file')
+        inv.ezie_l2_file= cls._resolve_state_path(state.get('ezie_l2_file'), state_dir)
         inv.event_time= np.datetime64(state['event_time']) if state.get('event_time') is not None else None
         inv.SML_data= None
-        inv.inversion_repo= state.get('inversion_repo', os.path.dirname(save_file))
+        inv.inversion_repo= inversion_repo
         os.makedirs(inv.inversion_repo, exist_ok=True)
 
         inv.sat_heading= state.get('sat_heading')
@@ -675,11 +766,11 @@ class inversion(object):
         inv.poles= None
 
         files= state.get('files', {})
-        inv.SM_data= cls._load_file_path_state(files.get('SM_data'))
-        inv.SML_data= cls._load_file_path_state(files.get('SML_data'))
-        inv.stations= cls._load_file_path_state(files.get('stations'))
-        inv.amplitudes= cls._load_file_path_state(files.get('amplitudes'))
-        inv.estimated= cls._load_file_path_state(files.get('estimated'))
+        inv.SM_data= cls._resolve_state_path(files.get('SM_data'), state_dir)
+        inv.SML_data= cls._resolve_state_path(files.get('SML_data'), state_dir)
+        inv.stations= cls._resolve_state_path(files.get('stations'), state_dir)
+        inv.amplitudes= cls._resolve_state_path(files.get('amplitudes'), state_dir)
+        inv.estimated= cls._resolve_state_path(files.get('estimated'), state_dir)
 
         grids= state.get('grids', {})
         inv.node_grid= cs.from_dictionary(grids['node_grid']) if grids.get('node_grid') is not None else None
@@ -734,9 +825,12 @@ class inversion(object):
         """
         from SECSpy.SuperMAG_tools import SuperMAGGetData, _default_stations_path, _STATION_COLUMNS, SuperMAGGetIndices
         from SECSpy.utils import validinput
+        stations_path= None
+        if isinstance(self.stations, str):
+            stations_path= self.stations
+            self.stations= pd.read_csv(self.stations)
         if self.stations is None or 'xi' not in self.stations.columns:
-            stations_path = _default_stations_path()
-            stations = pd.read_csv(stations_path, names=_STATION_COLUMNS, skiprows=1)
+            stations = pd.read_csv(_default_stations_path(), names=_STATION_COLUMNS, skiprows=1)
             stations['xi'], stations['eta']= self.node_grid.projection.geo2cube(stations.GEOLON, stations.GEOLAT)
             self.stations= stations
         if username is not None:
@@ -759,7 +853,9 @@ class inversion(object):
         eta_max=self.node_grid.eta_max.copy()
         eta_min-=grid_buffer[1]*eta_min
         eta_max+=grid_buffer[1]*eta_max
-        self.SM_data= SuperMAGGetData(username, start-np.timedelta64(1, 'm'), extent, ['GEO', 'decl'], f'xi>={xi_min} & xi<={xi_max} & eta>={eta_min} & eta<={eta_max}', stations=self.stations)[1]
+        status, self.SM_data= SuperMAGGetData(username, start-np.timedelta64(1, 'm'), extent, ['GEO', 'decl'], f'xi>={xi_min} & xi<={xi_max} & eta>={eta_min} & eta<={eta_max}', stations=self.stations)
+        if not status:
+            raise ValueError('No data was downloaded check inputs e.g. username or internet connection')
         self.SM_data.sort_values(['Date_UTC', 'glat'], inplace=True)
         self.SM_data.index= list(range(len(self.SM_data)))
         decl_rad = np.deg2rad(self.SM_data['decl'])
@@ -814,6 +910,8 @@ class inversion(object):
         if save_path is not None:
             self.SML_data.to_csv(save_path, index=False)
             self.SML_data= save_path
+        if stations_path is not None:
+            self.stations= stations_path
 
 
     def run_inversion(self, l1=None, l2=None, start=-np.timedelta64(30, 'm'), end=np.timedelta64(30, 'm'), save='',
