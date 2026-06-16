@@ -10,6 +10,8 @@ from SECSpy.utils import date2filename
 import os
 import time
 import tempfile
+import shutil
+import warnings
 from importlib.resources import files as package_files
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
@@ -480,6 +482,55 @@ class inversion(object):
             return None
         return self._relative_state_path(stations_path, state_dir)
 
+    @staticmethod
+    def _path_is_inside(path, directory):
+        """Return whether ``path`` is inside ``directory``."""
+        path= os.path.abspath(os.fspath(path))
+        directory= os.path.abspath(os.fspath(directory))
+        try:
+            return os.path.commonpath([path, directory]) == directory
+        except ValueError:
+            return False
+
+    @staticmethod
+    def _copy_with_available_name(source, destination):
+        """Copy ``source`` to ``destination``, avoiding accidental overwrite."""
+        source= os.path.abspath(os.fspath(source))
+        destination= os.path.abspath(os.fspath(destination))
+        if os.path.exists(destination):
+            try:
+                if os.path.samefile(source, destination):
+                    return destination
+            except OSError:
+                pass
+            stem, ext= os.path.splitext(destination)
+            counter= 1
+            while os.path.exists(destination):
+                destination= f'{stem}_{counter}{ext}'
+                counter+= 1
+        shutil.copy2(source, destination)
+        return destination
+
+    def _save_ezie_l2_state(self, state_dir, copy_ezie_l2=True):
+        """Return the saved-state path for the EZIE L2 file."""
+        if self.ezie_l2_file is None:
+            return None
+
+        ezie_l2_file= os.path.abspath(os.fspath(self.ezie_l2_file))
+        if not copy_ezie_l2 or self._path_is_inside(ezie_l2_file, state_dir):
+            return self._relative_state_path(ezie_l2_file, state_dir)
+
+        source= os.path.realpath(ezie_l2_file)
+        destination= os.path.join(state_dir, os.path.basename(source))
+        copied_path= self._copy_with_available_name(source, destination)
+        warnings.warn(
+            'EZIE L2 file was outside the inversion repo; copied it into the repo. '
+            'Use save_state(copy_ezie_l2=False) to disable.',
+            UserWarning,
+            stacklevel=2,
+        )
+        return self._relative_state_path(copied_path, state_dir)
+
     def _repo_path(self, filename, prefix=None):
         """Resolve optional output paths inside ``self.inversion_repo``.
 
@@ -503,7 +554,7 @@ class inversion(object):
             prefix= ''
         return os.path.join(self.inversion_repo, f'{prefix}{filename}')
 
-    def save_state(self, save_file=None):
+    def save_state(self, save_file=None, copy_ezie_l2=True):
         """Save enough metadata and file paths to recreate this inversion object.
 
         Parameters
@@ -511,6 +562,9 @@ class inversion(object):
         save_file : str or path-like, optional, default: None
             JSON state path. If ``None``, ``inversion_state.json`` is written in
             ``self.inversion_repo``.
+        copy_ezie_l2 : bool, default: True
+            If ``True``, copy an external EZIE L2 file into the inversion
+            repository before recording it in the state file.
 
         Returns
         -------
@@ -534,10 +588,11 @@ class inversion(object):
         amplitudes_path= self._save_file_backed_state(self.amplitudes, 'amplitudes.ncdf4', 'netcdf')
         estimated_path= self._save_file_backed_state(self.estimated, 'estimated.ncdf4', 'netcdf')
         stations_path= self._save_station_state(state_dir)
+        ezie_l2_path= self._save_ezie_l2_state(state_dir, copy_ezie_l2=copy_ezie_l2)
 
         state= {
             'state_file': os.path.basename(save_file),
-            'ezie_l2_file': self._relative_state_path(self.ezie_l2_file, state_dir) if self.ezie_l2_file is not None else None,
+            'ezie_l2_file': ezie_l2_path,
             'event_time': self.event_time,
             'inversion_repo': self._relative_state_path(self.inversion_repo, state_dir),
             'sat_heading': self.sat_heading,
