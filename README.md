@@ -19,6 +19,13 @@ cd SECSpy
 python -m pip install .
 ```
 
+If the repository is shared as a copied folder or zip file, unzip it first and
+install from the folder path:
+
+```bash
+python -m pip install /path/to/SECSpy
+```
+
 For development, install in editable mode:
 
 ```bash
