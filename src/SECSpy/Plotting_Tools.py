@@ -1,5 +1,7 @@
 from SECSpy.SECS import ArgumentError
 import numpy as np
+import os
+import tempfile
 from .natural_earth import (
     grid_extent as _grid_extent,
     natural_earth_land_mask,
@@ -7,6 +9,43 @@ from .natural_earth import (
     project_natural_earth,
     projected_parts_to_path,
 )
+
+SECSPY_PLOT_FONT_FAMILY = 'DejaVu Sans'
+
+
+def _ensure_writable_matplotlib_cache():
+    cache_root = os.path.join(tempfile.gettempdir(), 'secspy-matplotlib')
+    os.environ.setdefault('MPLCONFIGDIR', cache_root)
+    os.environ.setdefault('XDG_CACHE_HOME', cache_root)
+    os.makedirs(cache_root, exist_ok=True)
+
+
+_ensure_writable_matplotlib_cache()
+
+
+def use_consistent_plot_fonts(font_family=SECSPY_PLOT_FONT_FAMILY):
+    """Make normal Matplotlib text and mathtext use the same font family."""
+    _ensure_writable_matplotlib_cache()
+
+    import matplotlib as mpl
+
+    mpl.rcParams.update({
+        'font.family': 'sans-serif',
+        'font.sans-serif': [font_family],
+        'font.cursive': [font_family],
+        'text.usetex': False,
+        'mathtext.fontset': 'custom',
+        'mathtext.default': 'regular',
+        'mathtext.rm': font_family,
+        'mathtext.it': f'{font_family}:italic',
+        'mathtext.bf': f'{font_family}:bold',
+        'mathtext.cal': font_family,
+        'mathtext.sf': font_family,
+        'mathtext.tt': font_family,
+        'axes.unicode_minus': False,
+    })
+    return font_family
+
 
 def quiverkey_left_label(fig, qk, text, pad=0.008, **text_kwargs):
     if not hasattr(qk, 'vector'):
