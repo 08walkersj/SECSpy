@@ -13,13 +13,18 @@ import tempfile
 import shutil
 import warnings
 from importlib.resources import files as package_files
+from SECSpy.Plotting_Tools import (
+    contour_labels,
+    subplot_align,
+    quiverkey_left_label,
+    use_consistent_plot_fonts,
+)
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
 from polplot import Polarplot as polar
 import json
 import xarray as xr
 from tqdm import tqdm
-from SECSpy.Plotting_Tools import contour_labels, subplot_align, quiverkey_left_label
 
 class inversion(object):
     def __init__(self, ezie_l2_file, event_time, inversion_repo= None, **sat_vector_kwargs) -> None:
@@ -1172,6 +1177,7 @@ class inversion(object):
         matplotlib.figure.Figure
             Polar MLT figure.
         """
+        use_consistent_plot_fonts()
         fig= plt.figure(figsize=(20, 20))
         ax= polar(fig.add_subplot(), color='grey', linewidth=2)
         ezie = Dataset(self.ezie_l2_file)
@@ -1251,6 +1257,7 @@ class inversion(object):
         matplotlib.figure.Figure
             Figure with magnetic-field, current, SML, colorbar, and legend axes.
         """
+        use_consistent_plot_fonts()
         if 'hspace' not in grid_spec_kwargs:
             grid_spec_kwargs['hspace']= 0
         if 'wspace' not in grid_spec_kwargs:
@@ -1261,7 +1268,7 @@ class inversion(object):
         gs= fig.add_gridspec(2, 3,**grid_spec_kwargs)
 
         mag_ax= fig.add_subplot(gs[0, 0])
-        mag_ax.set_title('Magnetic Field', size=50)
+        mag_ax.set_title('Ground Magnetic Field', size=50)
         mag_ax.Q_B= None
         mag_ax.Q_B2= None
         mag_ax.Br= None
@@ -1278,7 +1285,7 @@ class inversion(object):
         cbar.set_label(label='Br [nT]', size=30)
 
         secs_ax= fig.add_subplot(gs[0, 1])
-        secs_ax.set_title('Current', size=50)
+        secs_ax.set_title('Divergence-Free Current', size=50)
         secs_ax.ezie_pass= []
         secs_ax.Q_J= None
         secs_ax.Curqk= None
@@ -1290,12 +1297,12 @@ class inversion(object):
         cbar=fig.colorbar(plt.cm.ScalarMappable(norm=plt.Normalize(vmin=-secs_lim, vmax=secs_lim), cmap='seismic'), cax=secs_cax,
                      orientation='horizontal', 
                      extend='both')
-        cbar.set_label(label=r'Equivalent FAC [$\mu/m^{2}$]', size=30)
+        cbar.set_label(label=r'Equivalent FAC [$\mu\mathrm{A}/m^{2}$]', size=30)
 
         sml_ax= fig.add_subplot(gs[0, 2])
         sml_ax.set_title('SML Index', size=50)
         sml_ax.set_ylabel('Index [nT]', size=40, labelpad=-15)
-        sml_ax.set_xlabel('Universal Time', size=40, labelpad=40)
+        sml_ax.set_xlabel('UTC [hh:mm]', size=40, labelpad=40)
         ind= (self.SML_data.Date_UTC>self.event_time-np.timedelta64(1, 'h'))&\
             (self.SML_data.Date_UTC<self.event_time+np.timedelta64(1, 'h'))
 
@@ -1379,6 +1386,7 @@ class inversion(object):
         are opened temporarily and restored to their original paths before
         returning.
         """
+        use_consistent_plot_fonts()
 
         if 'Br_lim' not in create_fig_kwargs:
             create_fig_kwargs['Br_lim']= 500
@@ -1508,9 +1516,9 @@ class inversion(object):
             ax.clon=[clon, contour_labels(clon, fmt=self._mlt_contour_fmt, sides=['bottom'], xpad=.06, ypad=.04, size=30)]
             ax.clat=[clat, contour_labels(clat, fmt=lambda x: f'{int(x)}'+r'$^{\circ}$'+'\nmlat', xpad=.04, ypad=.07, sides=['left', 'right'], size=30)]
             ax.axis('off')
-        mag_ax.set_title('Magnetic Field', size=50)
-        secs_ax.set_title('Current', size=50)
-        fig.suptitle(self.amplitudes.sel(time=self.event_time+time, method='nearest').time.values.astype('datetime64[m]').tolist(), size=70, y=.86)
+        mag_ax.set_title('Ground Magnetic Field', size=50)
+        secs_ax.set_title('Divergence-Free Current', size=50)
+        fig.suptitle(f'{self.amplitudes.sel(time=self.event_time+time, method='nearest').time.values.astype('datetime64[m]').tolist()} UTC', size=70, y=.86)
         for var in ['SM_data', 'SML_data', 'estimated', 'amplitudes']:
             if file_paths[f'{var}_path'] is not None:
                 value= getattr(self, var)
