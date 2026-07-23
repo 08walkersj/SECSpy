@@ -607,6 +607,7 @@ class inversion(object):
             'l1': self.l1,
             'l2': self.l2,
             'SECS_kwargs': self.SECS_kwargs,
+            'fitting_matrix': self.poles.fitting_matrix,
             'files': {
                 'SM_data': self._relative_state_path(SM_data_path, state_dir),
                 'SML_data': self._relative_state_path(SML_data_path, state_dir),
@@ -841,6 +842,7 @@ class inversion(object):
             inv.poles= SECS(inv.node_grid.lon.flatten(), inv.node_grid.lat.flatten(),
                             inv.eval_grid.lon.flatten(), inv.eval_grid.lat.flatten(),
                             **inv.SECS_kwargs)
+            inv.poles.fitting_matrix= state.get('fitting_matrix', inv.poles.fitting_matrix)
 
         return inv
     def download_data(self, username=None, grid_buffer=(.1, .1),
@@ -1518,7 +1520,7 @@ class inversion(object):
             ax.axis('off')
         mag_ax.set_title('Ground Magnetic Field', size=50)
         secs_ax.set_title('Divergence-Free Current', size=50)
-        fig.suptitle(f'{self.amplitudes.sel(time=self.event_time+time, method='nearest').time.values.astype('datetime64[m]').tolist()} UTC', size=70, y=.86)
+        fig.suptitle(f"{self.amplitudes.sel(time=self.event_time+time, method='nearest').time.values.astype('datetime64[m]').tolist()} UTC", size=70, y=.86)
         for var in ['SM_data', 'SML_data', 'estimated', 'amplitudes']:
             if file_paths[f'{var}_path'] is not None:
                 value= getattr(self, var)
