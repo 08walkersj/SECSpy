@@ -69,9 +69,9 @@ def theta(lat_value, long_value, latitude, longitude):
     Parameters
     ----------
     lat_value : numpy.ndarray (Degrees)
-        Latitude position of the SEC pole(s).
+        Latitude position of the SECS pole(s).
     long_value : numpy.ndarray (Degrees)
-        Longitude position of the SEC pole(s).
+        Longitude position of the SECS pole(s).
     latitude : numpy.ndarray (Degrees)
         Latitude position of the evaluation point(s).
     longitude : numpy.ndarray (Degrees)
@@ -80,9 +80,9 @@ def theta(lat_value, long_value, latitude, longitude):
     Returns
     -------
     Colatitude : numpy.ndarray (Radians)
-        Theta prime, the colatitude of the evaluation point(s) from the SEC pole(s).
+        Theta prime, the colatitude of the evaluation point(s) from the SECS pole(s).
     """
-    #theta_P, phi_P: colatitude of SEC pole(s), longitude of SEC pole(s)
+    #theta_P, phi_P: colatitude of SECS pole(s), longitude of SECS pole(s)
     theta_P =Deg2Rad(90- lat_value)
     phi_P =Deg2Rad(long_value)
     #theta0, phi0: colatitude of evaluation point(s), 
@@ -97,16 +97,16 @@ def CosC(theta_P, theta0, thetap):
     Parameters
     ----------
     theta_P : numpy.ndarray (Radians)
-        Colatitude of the SEC pole(s).
+        Colatitude of the SECS pole(s).
     theta0 : numpy.ndarray (Radians)
         Colatitude of the evaluation point(s).
     thetap : numpy.ndarray (Radians)
-        Theta prime, the colatitude of the evaluation point(s) from the SEC pole(s).
+        Theta prime, the colatitude of the evaluation point(s) from the SECS pole(s).
 
     Returns
     -------
     CosC : numpy.ndarray
-        Variable needed for the conversion of vectors from the local SEC pole system(s) to a global co-ordinate system.
+        Variable needed for the conversion of vectors from the local SECS pole system(s) to a global co-ordinate system.
     """
     A= np.cos(theta_P)- np.cos(np.vstack(theta0))*np.cos(thetap)
     B= np.sin(np.vstack(theta0))*np.sin(thetap)
@@ -117,18 +117,18 @@ def SinC(theta_P, thetap, phi_P, phi0):
     Parameters
     ----------
     theta_P : numpy.ndarray (Radians)
-        Colatitude of the SEC pole(s).
+        Colatitude of the SECS pole(s).
     thetap : numpy.ndarray (Radians)
-        Theta prime, the colatitude of the evaluation point(s) from the SEC pole(s).
+        Theta prime, the colatitude of the evaluation point(s) from the SECS pole(s).
     phi_P : numpy.ndarray (Radians)
-        Longitude of the SEC pole(s).
+        Longitude of the SECS pole(s).
     phi0 : numpy.ndarray (Radians)
         Longitude of the evaluation point(s).
 
     Returns
     -------
     SinC : numpy.ndarray
-        Variable needed for the conversion of vectors from the "local" SEC pole system(s) to a global co-ordinate system.
+        Variable needed for the conversion of vectors from the "local" SECS pole system(s) to a global co-ordinate system.
     """
     A= np.sin(theta_P)*np.sin(phi_P- np.vstack(phi0))
     B= np.sin(thetap)
@@ -139,21 +139,21 @@ def Local2Global(theta_P, theta0, thetap, phi_P, phi0, VectorPhi, VectorTheta):
     Parameters
     ----------
     theta_P : numpy.ndarray (Radians)
-        Colatitude of the SEC pole(s).
+        Colatitude of the SECS pole(s).
     theta0 : numpy.ndarray (Radians)
         Colatitude of the evaluation point(s).
     thetap : numpy.ndarray (Radians)
-        Theta prime, the colatitude of the evaluation point(s) from the SEC pole(s).
+        Theta prime, the colatitude of the evaluation point(s) from the SECS pole(s).
     phi_P : numpy.ndarray (Radians)
-        Longitude of the SEC pole(s).
+        Longitude of the SECS pole(s).
     phi0 : numpy.ndarray (Radians)
         Longitude of the evaluation point(s).
     VectorPhi : numpy.ndarray (Vector component)
         Component of the vector in the direction of the phi unit vector in "local" 
-        SEC pole system(s) to be converted into a projection in a global system.
+        SECS pole system(s) to be converted into a projection in a global system.
     VectorTheta : numpy.ndarray (Vector component)
         Component of the vector in the direction of the theta unit vector in "local" 
-        SEC pole system(s) to be converted into a projection in a global system.
+        SECS pole system(s) to be converted into a projection in a global system.
 
     Returns
     -------
@@ -175,24 +175,24 @@ def BrDF(thetap, r, R):
     Parameters
     ----------
     thetap : numpy.ndarray (Radians)
-        Theta prime, the colatitude of the evaluation point(s) from the SEC pole(s).
+        Theta prime, the colatitude of the evaluation point(s) from the SECS pole(s).
     r : float (Meters)
         Radial distance from the centre of the Earth to the evaluation point(s).
     R : float (Meters)
-        Radial distance from the centre of the Earth to the SEC pole(s)/ ionospheric layer.
+        Radial distance from the centre of the Earth to the SECS pole(s)/ ionospheric layer.
 
     Raises
     ------
     ValueError
-        Error if you try to evaluate the magnetic field at the radius of the SEC pole(s) 
+        Error if you try to evaluate the magnetic field at the radius of the SECS pole(s) 
         as there shouldn't be a reason to do this.
 
     Returns
     -------
     Matrix : numpy.ndarray (Tesla)
-        When the matrix is multiplied by the SEC pole amplitude(s)/ 
+        When the matrix is multiplied by the SECS pole amplitude(s)/ 
         scalar(s) will give the radial magnetic field component at the evaluation 
-        point(s) due to the SEC pole(s) in the "local" SEC pole system(s).
+        point(s) due to the SECS pole(s) in the "local" SECS pole system(s).
     """
     A= u0/(4*np.pi*r)
     if isinstance(r, (int, float)):
@@ -219,24 +219,24 @@ def BthetaDF(thetap, r, R):
     Parameters
     ----------
     thetap : numpy.ndarray (Radians)
-        Theta prime, the colatitude of the evaluation point(s) from the SEC pole(s).
+        Theta prime, the colatitude of the evaluation point(s) from the SECS pole(s).
     r : float (Meters)
         Radial distance from the centre of the Earth to the evaluation point(s).
     R : float (Meters)
-        Radial distance from the centre of the Earth to the SEC pole(s)/ ionospheric layer.
+        Radial distance from the centre of the Earth to the SECS pole(s)/ ionospheric layer.
 
     Raises
     ------
     ValueError
-        Error if you try to evaluate the magnetic field at the radius of the SEC pole(s) 
+        Error if you try to evaluate the magnetic field at the radius of the SECS pole(s) 
         as there shouldn't be a reason to do this.
 
     Returns
     -------
     Matrix : numpy.ndarray (Tesla)
-        When the matrix is multiplied by the SEC pole amplitude(s)/ 
+        When the matrix is multiplied by the SECS pole amplitude(s)/ 
         scalar(s) will give the theta component of the magnetic field at the evaluation 
-        point(s) due to the SEC pole(s) in the "local" SEC pole system(s).
+        point(s) due to the SECS pole(s) in the "local" SECS pole system(s).
     """
     if isinstance(r, (int, float)):
         A= -u0/(4*np.pi*r*np.sin(thetap))
@@ -262,24 +262,24 @@ def BphiCF(thetap, r, R, theta0=0):
     Parameters
     ----------
     thetap : numpy.ndarray (Radians)
-        Theta prime, the colatitude of the evaluation point(s) from the SEC pole(s).
+        Theta prime, the colatitude of the evaluation point(s) from the SECS pole(s).
     r : float (Meters)
         Radial distance from the centre of the Earth to the evaluation point(s).
     R : float (Meters)
-        Radial distance from the centre of the Earth to the SEC pole(s)/ ionospheric layer.
+        Radial distance from the centre of the Earth to the SECS pole(s)/ ionospheric layer.
 
     Raises
     ------
     ValueError
-        Error if you try to evaluate the magnetic field at the radius of the SEC pole(s) 
+        Error if you try to evaluate the magnetic field at the radius of the SECS pole(s) 
         as there shouldn't be a reason to do this.
 
     Returns
     -------
     Matrix : numpy.ndarray (Tesla)
-        When the matrix is multiplied by the SEC pole amplitude(s)/ 
+        When the matrix is multiplied by the SECS pole amplitude(s)/ 
         scalar(s) will give the phi component of the magnetic field at the evaluation 
-        point(s) due to the SEC pole(s) in the "local" SEC pole system(s).
+        point(s) due to the SECS pole(s) in the "local" SECS pole system(s).
     """
     if r< R:
         return thetap*0
@@ -301,24 +301,24 @@ def V(thetap, R, theta0= 0):
     Parameters
     ----------
     thetap : list/numpy.ndarray (Radians)
-        Colatitude of the evaluation point(s) in local SEC pole system(s).
+        Colatitude of the evaluation point(s) in local SECS pole system(s).
     R : float (Meters)
         Radius from the centre of the Earth to the evaluation point(s).
     theta0 : float (Radians)
-        Singularity limit to be used when the evaluation point(s) are too close to the SEC pole(s). The method is based on equations 2.44 from Vanhamäki 2020
+        Singularity limit to be used when the evaluation point(s) are too close to the SECS pole(s). The method is based on equations 2.44 from Vanhamäki 2020
         The default is 0.
 
     Returns
     -------
     Current : numpy.ndarray (Amps)
         → For Divergence-free SECS:
-            Divergence-free current around the SEC pole system(s) due 
+            Divergence-free current around the SECS pole system(s) due 
             to its nature only in the phi unit vector direction in 
-            the local co-ordinate system and only once multiplied by the SEC pole amplitude(s).
+            the local co-ordinate system and only once multiplied by the SECS pole amplitude(s).
         → For Curl-free SECS:
-            Curl-free current around the SEC pole system(s) due 
+            Curl-free current around the SECS pole system(s) due 
             to its nature only in the theta unit vector direction in 
-            the local co-ordinate system and only once multiplied by the SEC pole amplitude(s).
+            the local co-ordinate system and only once multiplied by the SECS pole amplitude(s).
     """
     #Equation 2.7/2.8 2.43/2.44 (Vanhamäki 2020)
     A= 1/(4*np.pi*R)
@@ -375,9 +375,9 @@ class SECS:
         Parameters
         ----------
         longitude : list/numpy.ndarray (Degrees)
-            Longitude position of the SEC pole(s).
+            Longitude position of the SECS pole(s).
         latitude : list/numpy.ndarray (Degrees)
-            Latitude position of the SEC pole(s).
+            Latitude position of the SECS pole(s).
         eval_longitude : list/numpy.ndarray (Degrees)
             Longitude position of the evaluation point(s).
         eval_latitude : list/numpy.ndarray (Degrees)
@@ -386,7 +386,7 @@ class SECS:
             The radial distance, from the centre of the Earth, to the current. 
             The default is RE+110E3, the F-layer of the Ionosphere.
         mode : str, optional
-            The mode to be used for the SEC model, options are:
+            The mode to be used for the SECS model, options are:
 
             'default'→ which can involve just one set of poles or if a second radial distance is defined
             then a second set of poles will be made (longitude2 and latitude2 can be used to define 
@@ -406,9 +406,9 @@ class SECS:
         image_current_radius : Meters, optional
             The radial distance, from the centre of the Earth, to the telluric or image current (for telluric poles). The default is None.
         longitude2 : list/numpy.ndarray (Degrees), optional
-            Longitude positon of the telluric SEC pole(s). The default is None.
+            Longitude positon of the telluric SECS pole(s). The default is None.
         latitude2 : list/numpy.ndarray (Degrees), optional
-            Latitude position of the telluric SEC pole(s). The default is None.
+            Latitude position of the telluric SECS pole(s). The default is None.
 
         Raises
         ------
@@ -424,15 +424,15 @@ class SECS:
         RC : float (Meters)
             The radial distance, from the centre of the Earth, to the telluric or image current (for telluric poles).
         (telluric_ /ionospheric_) pole_longitude : numpy.ndarray (Degrees)
-            Longitude position of the SEC pole(s).
+            Longitude position of the SECS pole(s).
         (telluric_ /ionospheric_) pole_latitude : numpy.ndarray (Degrees)
-            Latitude position of the SEC pole(s).
+            Latitude position of the SECS pole(s).
         eval_longitude : numpy.ndarray (Degrees)
             Longitude position of the evaluation point(s).
         eval_latitude : numpy.ndarray (Degrees)
             Latitude position of the evaluation point(s).
         (telluric_ /ionospheric_) eval_theta_prime : Radians
-            The colatitude of the evaluation point(s) from the SEC pole(s).
+            The colatitude of the evaluation point(s) from the SECS pole(s).
         Returns
         -------
         None.
@@ -461,7 +461,7 @@ class SECS:
         if self.mode== 'image' and self.Rc is None:
             raise ArgumentError('image mode selected but image_current_radius is not defined')
         if not ((np.array([str(type(longitude)), str(type(longitude)), str(type(eval_longitude)), str(type(eval_latitude))])== "<class 'list'>") | (np.array([str(type(longitude)), str(type(longitude)), str(type(eval_longitude)), str(type(eval_latitude))])== "<class 'numpy.ndarray'>")).any():
-            raise ArgumentError('SEC pole longitude(s), latitude(s), evaluation longitude(s) or evaluation latitudes(s) are of the wrong type must be list or array')
+            raise ArgumentError('SECS pole longitude(s), latitude(s), evaluation longitude(s) or evaluation latitudes(s) are of the wrong type must be list or array')
         if self.mode=='default' and self.Rc is None:
             self.pole_longitude= np.array(longitude)
             self.pole_latitude= np.array(latitude)
@@ -513,8 +513,8 @@ class SECS:
         Returns
         -------
         G : numpy.ndarray (Matrix)
-            Matrix comprising of properties related to the magnetometer(s) and SEC pole(s), 
-            when multiplied by the SEC pole amplitude(s) would match the magnetometer measurement(s)
+            Matrix comprising of properties related to the magnetometer(s) and SECS pole(s), 
+            when multiplied by the SECS pole amplitude(s) would match the magnetometer measurement(s)
             if the model is perfectly accurate at the magnetometer locations.
         invG : numpy.ndarray (Matrix)
             Moore-Penrose/sudo inverse of the G matrix using singular value decomposition.
@@ -522,9 +522,9 @@ class SECS:
         New Attributes
         --------------
         fitting_matrix : numpy.ndarray (Matrix)
-            Matrix that when multiplied by the magnetometer data will give the SEC pole amplitude(s).
+            Matrix that when multiplied by the magnetometer data will give the SECS pole amplitude(s).
         (telluric_ /ionospheric_) theta_prime : numpy.ndarray (Radians)
-            The colatitude of the evaluation point(s) from the SEC pole(s).
+            The colatitude of the evaluation point(s) from the SECS pole(s).
 
         """
         #Calculate theta prime of the magnetometers
@@ -613,7 +613,7 @@ class SECS:
         invD= np.zeros((r,r))
         invD[:len(s),:len(s)]= inv(D)
         invG= np.dot(np.dot(V.T,invD),U.T)
-        #Calculating fitting matrix when multiplied by the magnetometer data will give the SEC pole amplitude(s)
+        #Calculating fitting matrix when multiplied by the magnetometer data will give the SECS pole amplitude(s)
         self.fitting_matrix[system.lower()]= np.dot(invG, G.T)
         return G, invG
     def G_Matrix(self, magnetometer_longitude, magnetometer_latitude, eval_radius= RE, system='divergence-free', singularity_limit=0):
@@ -635,8 +635,8 @@ class SECS:
         Returns
         -------
         G : numpy.ndarray (Matrix)
-            Matrix comprising of properties related to the magnetometer(s) and SEC pole(s), 
-            when multiplied by the SEC pole amplitude(s) would match the magnetometer measurement(s)
+            Matrix comprising of properties related to the magnetometer(s) and SECS pole(s), 
+            when multiplied by the SECS pole amplitude(s) would match the magnetometer measurement(s)
             if the model is perfectly accurate at the magnetometer locations.
 
         """
@@ -710,7 +710,7 @@ class SECS:
         return G
     def eval_G_Matrix_B(self, eval_radius= RE, eval_longitude=None, eval_latitude=None, system='divergence-free', singularity_limit=0):
         """
-        When multiplied by the SEC pole amplitudes these matrices will return the magnetic field at the evaluation points.
+        When multiplied by the SECS pole amplitudes these matrices will return the magnetic field at the evaluation points.
 
         Parameters
         ----------
@@ -736,8 +736,8 @@ class SECS:
         → mode='image' or 'default' with telluric poles
         
         (Gr, Ge, Gn), (Gr2, Ge2, Gn2) : ((numpy.ndarray, numpy.ndarray, numpy.ndarray), (numpy.ndarray, numpy.ndarray, numpy.ndarray))
-            G matrix that will show Ionospheric SEC pole contribution to the magnetic field measurements at the evaluation point(s) when multiplied by SEC pole amplitude,
-            G matrix that will show Telluric SEC pole contribution to the magnetic field measurements at the evaluation point(s) when multiplied by SEC pole amplitude.
+            G matrix that will show Ionospheric SECS pole contribution to the magnetic field measurements at the evaluation point(s) when multiplied by SECS pole amplitude,
+            G matrix that will show Telluric SECS pole contribution to the magnetic field measurements at the evaluation point(s) when multiplied by SECS pole amplitude.
 
         """
         if eval_longitude is None and eval_latitude is None:
@@ -831,7 +831,7 @@ class SECS:
         """
         
 
-        When multiplied by the SEC pole amplitudes these matrices will return the sheet current density at the evaluation points.
+        When multiplied by the SECS pole amplitudes these matrices will return the sheet current density at the evaluation points.
 
         Parameters
         ----------
@@ -842,7 +842,7 @@ class SECS:
         eval_latitude : numpy.ndarray (Degrees)
             Latitude position of the evaluation point(s). The default is set by user in set up.
         singularity_limit : float, optional
-            Limit that signifies a change in formula close to the formula close to the SEC pole. The method is based on equations 2.44 from Vanhamäki 2020.
+            Limit that signifies a change in formula close to the formula close to the SECS pole. The method is based on equations 2.44 from Vanhamäki 2020.
             The default is 0.
         system: string, optional
             Specifies the system type either 'divergence-free' or 'curl-free'
@@ -988,8 +988,8 @@ class SECS:
         → mode='image' or 'default' with telluric poles
         
         (Br, Be, Bn), (Br2, Be2, Bn2) : ((numpy.ndarray, numpy.ndarray, numpy.ndarray), (numpy.ndarray, numpy.ndarray, numpy.ndarray)) (Tesla)
-            Ionospheric SEC pole contribution to the magnetic field measurements at the evaluation point(s),
-            Telluric SEC pole contribution to the magnetic field measurements at the evaluation point(s).
+            Ionospheric SECS pole contribution to the magnetic field measurements at the evaluation point(s),
+            Telluric SECS pole contribution to the magnetic field measurements at the evaluation point(s).
 
         """
         if isinstance(South, (int, float)):
@@ -1005,7 +1005,7 @@ class SECS:
         elif isinstance(Up, list):
             Up= np.array(Up)
         try:
-            #Calculate the amplitudes of the SEC pole(s)
+            #Calculate the amplitudes of the SECS pole(s)
             m= np.dot(self.fitting_matrix[system], np.concatenate((South, East, Up),axis=South.ndim-1).T)
             if South.ndim==2:
                 m= m.T
@@ -1126,7 +1126,7 @@ class SECS:
         eval_latitude : numpy.ndarray (Degrees), optional
             Latitude position of the evaluation point(s). The default is None.
         singularity_limit : float (Meters), optional
-            Singularity limit to be used when the evaluation point(s) are too close to the SEC pole(s). The method is based on equation 2.44 from Vanhamäki 2020
+            Singularity limit to be used when the evaluation point(s) are too close to the SECS pole(s). The method is based on equation 2.44 from Vanhamäki 2020
             The default is 0 which means ordinary SECS will be used if the singularity limit is not user defined.
         system: string, optional
             Specifies the system type either 'divergence-free' or 'curl-free'
@@ -1147,7 +1147,7 @@ class SECS:
         """
         singularity_limit= singularity_limit/self.R
         try:
-            #Calculate the amplitudes of the SEC pole(s)
+            #Calculate the amplitudes of the SECS pole(s)
             m= np.dot(self.fitting_matrix[system], np.concatenate((South, East, Up)).T)
         except KeyError:
             raise ModelError('Fitting matrix could not be found ensure you have successfully run the "Fitting_Matrix" function or assigned a '+system+'"fitting_matrix" as a key to the fitting_matrix dictionary in this class\nor invalid system type use either "divergence-free" or "curl-free"')
@@ -1259,7 +1259,7 @@ class SECS:
         Returns
         -------
         Amplitude : numpy.ndarray
-            Amplitude(s) of the SEC pole(s).
+            Amplitude(s) of the SECS pole(s).
         """
         if self.mode=='image':
             return np.dot(self.fitting_matrix[system.lower()], np.concatenate((South, East, Up)).T)
@@ -1327,3 +1327,162 @@ class SECS:
         coords= {'time':[time], 'xi':grid.xi[0], 'eta':grid.eta[:,0]}
         ds=xr.Dataset(data_vars=data_vars, coords=coords)
         return ds
+    def time_inversion(self, data, system='divergence-free'):
+        """
+        Calculate SECS amplitudes for a time series of magnetometer data.
+
+        Parameters
+        ----------
+        data : numpy.ndarray
+            Magnetometer data with shape ``(N, M)``, where ``N`` is the
+            number of time steps and ``M`` is the concatenated magnetometer
+            component vector expected by ``self.fitting_matrix``.
+        system : string, optional
+            Specifies the system type either 'divergence-free' or 'curl-free'.
+
+        Raises
+        ------
+        KeyError
+            Will be raised if ``self.fitting_matrix`` does not contain the
+            requested system.
+
+        Returns
+        -------
+        amps : numpy.ndarray
+            SECS amplitudes with shape ``(P, N)``, where ``P`` is the number of
+            SECS poles and ``N`` is the number of time steps.
+        """
+        # Keep time on the second axis so each column is one independent
+        # inversion time step.
+        amps= self.fitting_matrix[system]@data.T
+        if 'time_amps' not in self.__dict__:
+            self.time_amps= {'divergence-free': None, 'curl-free': None}
+        self.time_amps[system]= amps
+        return amps
+
+    def amps_to_xarray(self, amps, time, node_grid, mag_code=None,
+                    meas_glon=None, meas_glat=None):
+        """
+        Convert time-dependent SECS amplitudes to an xarray Dataset.
+
+        Parameters
+        ----------
+        amps : numpy.ndarray
+            SECS amplitudes with shape ``(P, N)``, where ``P`` is the number of
+            SECS poles and ``N`` is the number of time steps.
+        time : numpy.ndarray
+            Time coordinate corresponding to the second axis of ``amps``.
+        node_grid : secsy cubedsphere grid
+            Grid on which the SECS amplitudes are defined.
+        mag_code : list or numpy.ndarray, optional
+            Magnetometer station identifiers to store as dataset metadata.
+        meas_glon : list or numpy.ndarray, optional
+            Magnetometer geographic longitudes to store as dataset metadata.
+        meas_glat : list or numpy.ndarray, optional
+            Magnetometer geographic latitudes to store as dataset metadata.
+
+        Returns
+        -------
+        ds : xarray.Dataset
+            Dataset containing SECS amplitudes on ``(xi, eta, time)`` together
+            with grid coordinates and cell areas.
+        """
+        import xarray as xr
+        import json
+
+        # Matrix products return flattened grid points by time; xarray stores
+        # this output in cubed-sphere coordinate order.
+        amps=amps.reshape((*node_grid.shape, -1)).transpose(1, 0, 2)
+        attrs= {key:val for key, val in\
+                zip(['mag_code', 'meas_glon', 'meas_glat'], [mag_code, meas_glon, meas_glat])}
+        # Store the full grid description so the dataset is self-describing
+        # when written to netCDF and loaded without the original grid object.
+        attrs['cs_grid'] = json.dumps(node_grid.to_dictionary())
+        return xr.Dataset(data_vars=dict(Amplitude_df=(['xi', 'eta', 'time'], amps, {'units': 'A'}),
+                                                Area=(['xi', 'eta'], node_grid.A.T, {'units': 'm^2'})), 
+                        coords= dict(xi=node_grid.xi[0,:],
+                                        eta=node_grid.eta[:,0],
+                                        lon=(['xi', 'eta'], node_grid.lon.T),
+                                        lat=(['xi', 'eta'], node_grid.lat.T),
+                                        time=time),
+                        attrs=attrs
+                        )
+    def estimated_to_xarray(self, time, eval_grid, amps=None, data=None, mag_code=None, meas_glon=None, meas_glat=None,
+                            system='divergence-free', telluric=False):
+        """
+        Evaluate modeled magnetic field and equivalent current on a grid.
+
+        Parameters
+        ----------
+        time : numpy.ndarray
+            Time coordinate corresponding to the second axis of ``amps`` or
+            the first axis of ``data``.
+        eval_grid : secsy cubedsphere grid
+            Grid on which magnetic field and current components are evaluated.
+        amps : numpy.ndarray, optional
+            Precomputed SECS amplitudes with shape ``(P, N)``. If omitted,
+            ``data`` is inverted with :meth:`time_inversion`.
+        data : numpy.ndarray, optional
+            Magnetometer data with shape ``(N, M)`` used when ``amps`` is not
+            supplied.
+        mag_code : list or numpy.ndarray, optional
+            Magnetometer station identifiers to store as dataset metadata.
+        meas_glon : list or numpy.ndarray, optional
+            Magnetometer geographic longitudes to store as dataset metadata.
+        meas_glat : list or numpy.ndarray, optional
+            Magnetometer geographic latitudes to store as dataset metadata.
+        system : string, optional
+            Specifies the system type either 'divergence-free' or 'curl-free'.
+        telluric : bool, optional
+            If ``True``, use the telluric magnetic-field contribution returned
+            by :meth:`eval_G_Matrix_B`. The default uses the ionospheric
+            contribution.
+
+        Raises
+        ------
+        ValueError
+            Will be raised if neither ``amps`` nor ``data`` is supplied.
+
+        Returns
+        -------
+        ds : xarray.Dataset
+            Dataset containing ``Br``, ``Be``, ``Bn``, ``Je`` and ``Jn`` on
+            ``(xi, eta, time)`` with magnetic field in nT and current in
+            microamps per square meter.
+        """
+        import xarray as xr
+        import json
+
+        i= int(telluric)
+        if amps is None and data is None:
+            raise ValueError('Either amps or magnetometer data must be provided.')
+        if amps is None:
+            amps= self.time_inversion(data, system=system)
+        # Evaluation matrices operate on all time columns at once. This is
+        # equivalent to looping over amps[:, i] for each time step.
+        Br, Be, Bn= [G@amps for G in self.eval_G_Matrix_B(system=system)[i]]
+        Je, Jn= [G@amps for G in self.eval_G_Matrix_J(system=system)]
+        # Reshape from flattened evaluation points to (xi, eta, time). Time
+        # remains the final axis and is not interleaved with grid coordinates.
+        Br= Br.reshape((*eval_grid.shape, -1)).transpose(1, 0, 2)
+        Be= Be.reshape((*eval_grid.shape, -1)).transpose(1, 0, 2)
+        Bn= Bn.reshape((*eval_grid.shape, -1)).transpose(1, 0, 2)
+        Je= Je.reshape((*eval_grid.shape, -1)).transpose(1, 0, 2)
+        Jn= Jn.reshape((*eval_grid.shape, -1)).transpose(1, 0, 2)
+        attrs= {key:val for key, val in\
+                zip(['mag_code', 'meas_glon', 'meas_glat'], [mag_code, meas_glon, meas_glat])}
+        # Preserve the evaluation grid definition in the output metadata.
+        attrs['cs_grid'] = json.dumps(eval_grid.to_dictionary())
+        return xr.Dataset(data_vars=dict(Br=(['xi', 'eta', 'time'], Br*1e9, {'units': 'nT'}),
+                                        Be=(['xi', 'eta', 'time'], Be*1e9, {'units': 'nT'}),
+                                        Bn=(['xi', 'eta', 'time'], Bn*1e9, {'units': 'nT'}),
+                                        Je=(['xi', 'eta', 'time'], Je*1e6, {'units': 'uA/m^2'}),
+                                        Jn=(['xi', 'eta', 'time'], Jn*1e6, {'units': 'uA/m^2'}),
+                                        Area=(['xi', 'eta'], eval_grid.A.T, {'units': 'm^2'})), 
+                        coords= dict(xi=eval_grid.xi[0,:],
+                                        eta=eval_grid.eta[:,0],
+                                        lon=(['xi', 'eta'], eval_grid.lon.T),
+                                        lat=(['xi', 'eta'], eval_grid.lat.T),
+                                        time=time),
+                        attrs=attrs
+                        )
