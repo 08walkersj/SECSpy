@@ -616,6 +616,100 @@ class SECS:
         #Calculating fitting matrix when multiplied by the magnetometer data will give the SECS pole amplitude(s)
         self.fitting_matrix[system.lower()]= np.dot(invG, G.T)
         return G, invG
+    def Fitting_Matrix_Regularisation(self, l1, l2, grid, glon, glat, Apex, block_rows=100, system='divergence-free'):
+        """
+        Build a regularised fitting matrix for SEC amplitude inversion.
+
+        Parameters
+        ----------
+        l1 : float
+            Weight applied to the magnetic-east derivative regularisation.
+        l2 : float
+            Weight applied to the cubed-sphere nearest-neighbour roughness
+            regularisation.
+        grid : secsy cubedsphere grid
+            Node grid on which the SECS amplitudes are solved.
+        glon : numpy.ndarray (Degrees)
+            Geographic longitude of the magnetometer locations.
+        glat : numpy.ndarray (Degrees)
+            Geographic latitude of the magnetometer locations.
+        Apex : apexpy.Apex
+            Apex object used to calculate quasi-dipole base vectors on the
+            node grid.
+        block_rows : int, optional
+            Number of derivative rows to process at once when building the
+            magnetic-east regularisation matrix. The default is 100.
+        system : string, optional
+            Specifies the system type either 'divergence-free' or 'curl-free'.
+
+        Returns
+        -------
+        fitting_matrix : numpy.ndarray
+            Regularised fitting matrix. Multiplying this matrix by the
+            concatenated magnetometer data vector gives the SEC amplitudes.
+
+        New Attributes
+        --------------
+        fitting_matrix : dict
+            The requested ``system`` key is replaced with the regularised
+            fitting matrix.
+        """
+        import tqdm
+        Le, Ln= grid.get_Le_Ln()
+        # Project finite-difference operators onto magnetic east using the
+        # quasi-dipole base vectors at each node.
+        node_f1, node_f2= Apex.basevectors_qd(grid.lat.flatten(), grid.lon.flatten(), 110, coords='geo')
+        e= node_f1/np.linalg.norm(node_f1, axis=0)
+        n= node_f2/np.linalg.norm(node_f2, axis=0)
+
+        n_nodes= Le.shape[1]
+        L_eTL_e= np.zeros((n_nodes, n_nodes), dtype=np.result_type(Le, Ln, e))
+        # Build the magnetic-east derivative penalty in row blocks. This keeps
+        # the dense normal matrix accumulation but avoids materializing the full
+        # projected derivative operator at once.
+        for row_start in tqdm(range(0, Le.shape[0], block_rows), desc='Building lambda2', unit='block'):
+            rows= slice(row_start, row_start+block_rows)
+            L_e_block= e[0, rows, None]*Le[rows] + e[1, rows, None]*Ln[rows]
+            L_eTL_e+= L_e_block.T@L_e_block
+        # Normalise this penalty before applying l1 so its weight is comparable
+        # across grids with different spacing or dimensions.
+        L_eTL_e*= l1/np.max(np.abs(L_eTL_e))
+        λ2= L_eTL_e
+        λ3= l2
+
+        block_size, block_count= grid.shape[0], grid.shape[-1]
+        n_nodes= block_size*block_count
+        L_cube= np.zeros((n_nodes, n_nodes))
+        # Graph-Laplacian roughness penalty over neighboring cubed-sphere nodes.
+        # The first loop links rows within each block; the second links columns
+        # between adjacent blocks.
+        if block_size > 1:
+            block_diag= np.full(block_size, 2.)
+            block_diag[[0, -1]]= 1.
+            for block in tqdm(range(block_count), desc='Building L_cube rows', unit='block'):
+                offset= block*block_size
+                idx= offset + np.arange(block_size)
+                L_cube[idx, idx]+= block_diag
+                L_cube[idx[:-1], idx[1:]]-= 1.
+                L_cube[idx[1:], idx[:-1]]-= 1.
+        stride= grid.shape[1]
+        for i in tqdm(range(n_nodes-stride), desc='Building L_cube columns', unit='link'):
+            j= i+stride
+            L_cube[i, i]+= 1.
+            L_cube[j, j]+= 1.
+            L_cube[i, j]-= 1.
+            L_cube[j, i]-= 1.
+        L_cube*= λ3
+
+        # Add both regularisation terms to the normal matrix and use the same
+        # SVD-based inverse helper as the unregularised fitting matrix.
+        G_df= self.G_Matrix(glon, glat)
+        GTG= G_df.T@G_df
+        scale= np.median(GTG)
+        matrix = GTG+ λ2*scale + L_cube*scale
+        Inverse= self.Inverse_Matrix(matrix, cond=0)
+        self.fitting_matrix[system]= np.dot(Inverse, G_df.T)
+        return self.fitting_matrix[system]
     def G_Matrix(self, magnetometer_longitude, magnetometer_latitude, eval_radius= RE, system='divergence-free', singularity_limit=0):
         """
         Parameters
@@ -1320,7 +1414,7 @@ class SECS:
                                             eval_longitude=Magnetometer_Longitude, 
                                             eval_latitude= Magnetometer_Latitude, **kwargs)
         return Performance_Parameter(Up, Bu, len(Up)), Performance_Parameter(East, Be, len(East)), Performance_Parameter(-South, Bn, len(South))
-    def save_amplitudes(self, East, South, Up, grid, time=0, file_path='./', **kwargs):
+    def save_amplitudes(self, East, South, Up, grid, time=0, **kwargs):
         import xarray as xr
         m= self.Amplitude(East, South, Up, **kwargs)
         data_vars= {'Amplitude': (['time', 'xi', 'eta'], [m.reshape(grid.shape).T], {'units':'A'})}
