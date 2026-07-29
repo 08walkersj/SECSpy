@@ -162,12 +162,22 @@ def Filtered(*Filtering, stations=None, **kwargs):
 
 def SuperMAGGetInventory(logon, start, extent, *Filtering, **filter_kwargs):
     stations_source = _pop_stations_source(filter_kwargs)
+    if filter_kwargs:
+        unsupported = ", ".join(sorted(filter_kwargs))
+        raise TypeError(
+            "SuperMAGGetInventory only accepts station metadata kwargs "
+            f"for filtering; unsupported keyword(s): {unsupported}"
+        )
     status, stations = _supermag_api().SuperMAGGetInventory(
-        logon, _normalise_start(start), extent, **filter_kwargs
+        logon, _normalise_start(start), extent
     )
-    if status and Filtering:
+    if not status:
+        return status, stations
+
+    if Filtering:
         allowed = Filtered(*Filtering, stations=stations_source)
-        stations = np.asarray(stations)[np.isin(stations, allowed)]
+        stations = np.asarray(stations)
+        stations = stations[np.isin(stations, allowed)]
     return status, stations
 
 
@@ -326,3 +336,172 @@ def SuperMAGGetData(
     if format_type in {"list", "raw"}:
         return status, data
     return status, _postprocess_data(data)
+def cubedsphere_stations(grid, stations=None):
+    """
+    Add cube-sphere coordinates to a station DataFrame.
+
+    Parameters
+    ----------
+    stations : pandas.DataFrame
+        Station metadata, including 'GEOLON' and 'GEOLAT' columns.
+    grid : SECSpy.Grid_tools.Grid
+        Cube-sphere grid object with a 'projection' attribute.
+
+    Returns
+    -------
+    pandas.DataFrame
+        The input DataFrame with added 'xi' and 'eta' columns for cube-sphere coordinates.
+    """
+    if stations is None:
+        stations = pd.read_csv(_default_stations_path(), names=_STATION_COLUMNS, skiprows=1)
+    stations['xi'], stations['eta'] = grid.projection.geo2cube(stations.GEOLON, stations.GEOLAT)
+    return stations
+
+def download_in_grid(username, event_time, stations, grid, grid_buffer=(.1, .1),
+                    start= -np.timedelta64(1, 'h'), end= np.timedelta64(1, 'h'), auto_remove=False):
+    """Download and prepare SuperMAG magnetometer and SML data.
+
+    Parameters
+    ----------
+    username : str, optional, default: None
+        SuperMAG username. If ``None``, the previously stored
+        ``self.username`` is used.
+    stations : pandas.DataFrame, optional, default: None
+        Station metadata, including 'GEOLON' and 'GEOLAT' columns.
+    grid_buffer : tuple of float, default: (0.1, 0.1)
+        Fractional expansion of the xi and eta grid bounds used when
+        selecting stations.
+    start : numpy.timedelta64, default: numpy.timedelta64(-1, 'h')
+        Start of the download window relative to ``self.event_time``.
+    end : numpy.timedelta64, default: numpy.timedelta64(1, 'h')
+        End of the download window relative to ``self.event_time``.
+    save : str, bool, or None, default: ''
+        Prefix/path control for optional CSV output through
+        :meth:`_repo_path`. Use ``None`` or ``False`` to keep results only
+        in memory.
+    auto_remove : bool, default: False
+        If ``True``, automatically remove stations with incomplete time
+        coverage. If ``False``, ask before removing them.
+
+    Attributes
+    ----------
+    SM_data : pandas.DataFrame or str
+        SuperMAG magnetometer data with cubed-sphere coordinates and
+        projected magnetic perturbations, or a CSV path if saved.
+    SML_data : pandas.DataFrame or str
+        SuperMAG SML index data, or a CSV path if saved.
+    stations : pandas.DataFrame
+        Station metadata with cubed-sphere coordinates.
+
+    Raises
+    ------
+    ValueError
+        If no username is available, or if station availability is
+        inconsistent and removal is declined.
+    """
+    from SECSpy.SuperMAG_tools import SuperMAGGetData, _default_stations_path, _STATION_COLUMNS, SuperMAGGetIndices
+    from SECSpy.utils import validinput
+    import time
+    import tempfile
+    import os
+
+    # SuperMAG returns minute samples from the requested start up to one
+    # minute before start + extent. Because this query starts one minute
+    # before the requested inversion window, include an extra minute so the
+    # requested end time is present for run_inversion().
+    extent= (end-start + np.timedelta64(2, 'm')).astype('timedelta64[s]').astype(int)
+    start = event_time + start
+    xi_min=grid.xi_min.copy()
+    xi_max=grid.xi_max.copy()
+    xi_min-=grid_buffer[0]*xi_min
+    xi_max+=grid_buffer[0]*xi_max
+    eta_min=grid.eta_min.copy()
+    eta_max=grid.eta_max.copy()
+    eta_min-=grid_buffer[1]*eta_min
+    eta_max+=grid_buffer[1]*eta_max
+    status, SM_data= SuperMAGGetData(username, start-np.timedelta64(1, 'm'), extent, ['GEO', 'decl'], f'xi>={xi_min} & xi<={xi_max} & eta>={eta_min} & eta<={eta_max}',
+                                     stations=stations)
+    if not status:
+        raise ValueError('No data was downloaded check inputs e.g. username or internet connection')
+    SM_data.sort_values(['Date_UTC', 'glat'], inplace=True)
+    SM_data.index= list(range(len(SM_data)))
+    decl_rad = np.deg2rad(SM_data['decl'])
+    # SM_data['N_geo'] = SM_data['N_nez'] * np.cos(decl_rad) - SM_data['E_nez'] * np.sin(decl_rad)
+    # SM_data['E_geo'] = SM_data['N_nez'] * np.sin(decl_rad) + SM_data['E_nez'] * np.cos(decl_rad)
+    SM_data['xi'], SM_data['eta']= grid.projection.geo2cube(SM_data.glon, SM_data.glat)
+    SM_data.replace(999999, np.nan, inplace=True)
+    SM_data.dropna(inplace=True)
+    SM_data.index= list(range(len(SM_data)))
+    # Rotate measured east/north perturbations into the cubed-sphere basis
+    # used by the SECS forward model and plotting routines.
+    SM_data['Be_cs'], SM_data['Bn_cs']= grid.projection.vector_cube_projection(
+        SM_data.E_geo*1e-9,
+        SM_data.N_geo*1e-9,
+        SM_data.glon,
+        SM_data.glat,
+        return_xi_eta=False,
+    )
+    vals, counts= np.unique(SM_data.iaga.values, return_counts=True)
+    if len(np.unique(counts))>1:
+        # Create temporary CSV file with magnetometer availability
+        temp_dir = tempfile.gettempdir()
+        temp_file = os.path.join(temp_dir, 'magnetometer_availability.csv')
+        availability_df = pd.DataFrame({'IAGA': vals, 'counts': counts})
+        availability_df.to_csv(temp_file, index=False)
+        
+        if not auto_remove:
+            # Print information with clickable file link
+            print('Inconsistent availability of magnetometers')
+            print(f'Details saved to: file://{temp_file}')
+            time.sleep(1)
+        if auto_remove or validinput('Remove Problem Site(s)? (y/n)', 'y', 'n'):
+            if not auto_remove:
+                sites= input('Enter site IAGA codes to remove, separated by commas. Leave blank to remove all sites with incomplete data: ').strip()
+            else:
+                sites= ''
+            if sites=='':
+                sites= vals[counts!=np.max(counts)]
+            else:
+                sites= [site.strip() for site in sites.split(',') if site.strip()]
+            SM_data= SM_data.loc[~SM_data.iaga.isin(sites)]
+        else:
+            raise ValueError('inconsistent availability of magnetometers\n'+'\n'.join([f'{v}:{c}' for v, c in zip(vals, counts)]))
+    return SM_data
+def format_data_vector(data):
+    """Format SuperMAG data as a time-indexed magnetometer data table.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        SuperMAG observations with ``Date_UTC``, ``iaga``, ``glat``,
+        ``glon``, ``N_geo``, ``E_geo``, and ``Z_geo`` columns. Magnetic
+        perturbation components are expected in nanotesla.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Pivoted table indexed by ``Date_UTC`` with station IAGA codes as the
+        second column level. Columns include ``glat``, ``glon``,
+        ``East_ground``, ``South_ground``, and ``Up_ground``. Ground magnetic
+        perturbations are converted to tesla, with south and up components
+        sign-flipped from ``N_geo`` and ``Z_geo`` respectively. Stations are
+        ordered by geographic latitude.
+    """
+    data= (
+        data.assign(South_ground=-data['N_geo']*1e-9,
+                    East_ground=data['E_geo']*1e-9,
+                    Up_ground=-data['Z_geo']*1e-9)
+        .assign(iaga=pd.Categorical(data['iaga'], categories=(
+        data[['iaga', 'glat']]
+        .drop_duplicates('iaga')
+        .sort_values('glat')
+        ['iaga']), ordered=True))
+        .pivot_table(
+            index='Date_UTC',
+            columns='iaga',
+            values=['glat', 'glon', 'East_ground', 'South_ground', 'Up_ground', 'xi', 'eta'],
+            aggfunc='first',
+            observed=True,
+            sort=False,))
+
+    return data
