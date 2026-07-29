@@ -10,32 +10,6 @@ import os
 import numpy as np
 
 from SECSpy.SECS import ArgumentError
-import functools
-
-def dates2npdate(func):
-    @functools.wraps(func)
-    def wrapper(date, *args):
-        import pandas as pd
-        from datetime import datetime
-        if isinstance(date, np.datetime64):
-            pass
-        elif isinstance(date, pd.Timestamp):
-            date=date.to_numpy()
-        elif isinstance(date, datetime):
-            date=np.datetime64(date)
-        else:
-            raise ArgumentError(f'date type yet not known, update code or change format. Current type: {type(date)}')
-        return func(date, *args)
-    return wrapper
-@dates2npdate
-def date2filename(date):
-    import re
-    return '_'.join('_'.join(re.split('   |-|:', f'{date.astype("datetime64[m]").tolist()}')).split(' '))
-def filename2date(filename):
-    date=np.empty(3).astype(str)
-    time=np.empty(3).astype(str)
-    date[0], date[1], date[2], time[0], time[1], time[2]= filename.split('_')
-    return np.datetime64('-'.join(date)+'T'+':'.join(time))
 
 
 def get_image_size(image_path):
@@ -380,7 +354,7 @@ def dates2npdate(func):
     from functools import wraps
 
     @wraps(func)
-    def wrapper(date, *args):
+    def wrapper(date, *args, **kwargs):
         from datetime import datetime
 
         if isinstance(date, np.datetime64):
@@ -391,45 +365,143 @@ def dates2npdate(func):
             date=date.to_numpy()
         else:
             raise ArgumentError(f'date type yet not known, update code or change format. Current type: {type(date)}')
-        return func(date, *args)
+        return func(date, *args, **kwargs)
     return wrapper
 
 
+def _normalize_datetime_resolution(resolution):
+    """
+    Return a numpy datetime unit for supported filename resolutions.
+
+    ``None`` is used by ``date2filename`` to preserve its historical default
+    format, which truncates to minutes but keeps a seconds field set to ``00``.
+    """
+    if resolution is None:
+        return None
+
+    aliases = {
+        'Y': 'Y',
+        'y': 'Y',
+        'year': 'Y',
+        'years': 'Y',
+        'M': 'M',
+        'month': 'M',
+        'months': 'M',
+        'D': 'D',
+        'd': 'D',
+        'day': 'D',
+        'days': 'D',
+        'date': 'D',
+        'h': 'h',
+        'H': 'h',
+        'hour': 'h',
+        'hours': 'h',
+        'm': 'm',
+        'min': 'm',
+        'mins': 'm',
+        'minute': 'm',
+        'minutes': 'm',
+        'T': 'm',
+        's': 's',
+        'S': 's',
+        'sec': 's',
+        'secs': 's',
+        'second': 's',
+        'seconds': 's',
+    }
+
+    try:
+        return aliases[str(resolution)]
+    except KeyError as exc:
+        raise ValueError("resolution must be one of None, 'Y', 'M', 'D', 'h', 'm', or 's'") from exc
+
+
 @dates2npdate
-def date2filename(date):
+def date2filename(date, resolution=None):
     """
     Convert a date/time value to the timestamp format used in SECSpy paths.
 
     Parameters
     ----------
     date : numpy.datetime64, pandas.Timestamp, or datetime.datetime
-        Date/time value to encode. Resolution is truncated to minutes.
+        Date/time value to encode.
+    resolution : {None, 'Y', 'M', 'D', 'h', 'm', 's'}, optional
+        Smallest time component to include in the filename. ``'Y'`` returns
+        ``YYYY``, ``'M'`` returns ``YYYY_MM``, ``'D'`` returns ``YYYY_MM_DD``,
+        ``'h'`` returns ``YYYY_MM_DD_HH``, ``'m'`` returns
+        ``YYYY_MM_DD_HH_MM``, and ``'s'`` returns ``YYYY_MM_DD_HH_MM_SS``. The
+        default ``None`` preserves the historical SECSpy format by truncating
+        to minutes while keeping a seconds field set to ``00``.
 
     Returns
     -------
     str
-        Timestamp string formatted as ``YYYY_MM_DD_HH_MM_SS``.
+        Timestamp string with ``-``, ``T``, and ``:`` replaced by ``_``.
     """
-    import re
+    unit = _normalize_datetime_resolution(resolution)
+    if unit is None:
+        text = np.datetime_as_string(date.astype('datetime64[m]'), unit='s')
+    else:
+        text = np.datetime_as_string(date.astype(f'datetime64[{unit}]'), unit=unit)
 
-    return '_'.join('_'.join(re.split('   |-|:', f'{date.astype("datetime64[m]").tolist()}')).split(' '))
+    return text.replace('-', '_').replace('T', '_').replace(':', '_')
 
 
-def filename2date(filename):
+def filename2date(filename, resolution=None):
     """
     Parse a SECSpy timestamp filename back to ``numpy.datetime64``.
 
     Parameters
     ----------
     filename : str
-        Timestamp string formatted as ``YYYY_MM_DD_HH_MM_SS``.
+        Timestamp string formatted as ``YYYY`` through
+        ``YYYY_MM_DD_HH_MM_SS``.
+    resolution : {None, 'Y', 'M', 'D', 'h', 'm', 's'}, optional
+        Expected timestamp resolution. If omitted, the resolution is inferred
+        from the number of underscore-separated components in ``filename``.
 
     Returns
     -------
     numpy.datetime64
         Parsed datetime value.
     """
-    date=np.empty(3).astype(str)
-    time=np.empty(3).astype(str)
-    date[0], date[1], date[2], time[0], time[1], time[2]= filename.split('_')
-    return np.datetime64('-'.join(date)+'T'+':'.join(time))
+    units_by_part_count = {
+        1: 'Y',
+        2: 'M',
+        3: 'D',
+        4: 'h',
+        5: 'm',
+        6: 's',
+    }
+    expected_part_count = {
+        'Y': 1,
+        'M': 2,
+        'D': 3,
+        'h': 4,
+        'm': 5,
+        's': 6,
+    }
+    parts = str(filename).split('_')
+    unit = _normalize_datetime_resolution(resolution)
+
+    if unit is None:
+        try:
+            unit = units_by_part_count[len(parts)]
+        except KeyError as exc:
+            raise ValueError(
+                'filename must contain 1 to 6 underscore-separated date/time components'
+            ) from exc
+    elif len(parts) != expected_part_count[unit]:
+        raise ValueError(f"filename does not match resolution {resolution!r}")
+
+    if unit == 'Y':
+        return np.datetime64(parts[0], unit)
+    if unit == 'M':
+        return np.datetime64('-'.join(parts[:2]), unit)
+
+    date = '-'.join(parts[:3])
+    if unit == 'D':
+        return np.datetime64(date, unit)
+
+    datetime_text = f'{date}T{":".join(parts[3:])}'
+    return np.datetime64(datetime_text, unit)
