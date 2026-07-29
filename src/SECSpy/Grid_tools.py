@@ -140,3 +140,215 @@ def ImproveGrid(lon_centre, lat_centre, MagLon, MagLat, GridSpacing_km, length, 
     print('Number of problem poles with this optimisation ',
           num_minimum[I][I2])
     return change[I][I2], index[I][I2], num_minimum, change, index
+
+def _local2geo_rotation_diagnostics_for_grid(self, node_grid, center_lon, center_lat):
+    """Build a detailed diagnostic message for secsy projection failures.
+
+    Parameters
+    ----------
+    node_grid : secsy.cubedsphere.CSgrid
+        Grid whose projection failed ``local2geo_enu_rotation``.
+    center_lon, center_lat : float
+        Geographic longitude and latitude of the grid center.
+
+    Returns
+    -------
+    str
+        Multi-line diagnostic message with grid ranges and worst residuals.
+    """
+    lon = node_grid.local_lon.flatten()
+    lat = node_grid.local_lat.flatten()
+    projection = node_grid.projection
+    d2r = np.pi / 180
+
+    th = (90 - np.array(lat).flatten()) * d2r
+    ph = np.array(lon).flatten() * d2r
+    e_R = np.vstack((-np.sin(ph), np.cos(ph), np.zeros_like(ph))).T
+    n_R = np.vstack((-np.cos(th) * np.cos(ph), -np.cos(th) * np.sin(ph), np.sin(th))).T
+    u_R = np.vstack((np.sin(th) * np.cos(ph), np.sin(th) * np.sin(ph), np.cos(th))).T
+    R_enulocal2eceflocal = np.stack((e_R, n_R, u_R), axis=2)
+
+    lon_G, lat_G = projection.local2geo(lon, lat)
+    th = (90 - lat_G) * d2r
+    ph = lon_G * d2r
+    e_G = np.vstack((-np.sin(ph), np.cos(ph), np.zeros_like(ph))).T
+    n_G = np.vstack((-np.cos(th) * np.cos(ph), -np.cos(th) * np.sin(ph), np.sin(th))).T
+    u_G = np.vstack((np.sin(th) * np.cos(ph), np.sin(th) * np.sin(ph), np.cos(th))).T
+    R_ecefgeo2enugeo = np.stack((e_G, n_G, u_G), axis=1)
+
+    # Reproduce secsy's rotation consistency check so the error message can
+    # identify where and how badly the local vertical leaks into east/north.
+    R_enulocal2ecefgeo = np.einsum('ij , njk -> nik', projection.R_local2geo, R_enulocal2eceflocal)
+    R = np.einsum('nij, njk -> nik', R_ecefgeo2enugeo, R_enulocal2ecefgeo)
+    residual = np.abs(R[:, 2, [0, 1]]).max(axis=1)
+    bad = np.where(residual > 1e-6)[0]
+    worst = bad[np.argsort(residual[bad])[-5:]][::-1] if bad.size else np.array([], dtype=int)
+
+    lines = [
+        'secsy failed while converting the cubed-sphere grid derivatives to geographic east/north.',
+        'The grid/projection is internally inconsistent for local2geo_enu_rotation().',
+        f'grid shape: {node_grid.shape}, size: {node_grid.size}',
+        f'EZIE center lon/lat: {getattr(self, "lon_center", None)}, {getattr(self, "lat_center", None)}',
+        f'grid center lon/lat: {center_lon}, {center_lat}',
+        f'satellite heading: {getattr(self, "sat_heading", None)}',
+        f'geo lon range: {np.nanmin(node_grid.lon):.6g} to {np.nanmax(node_grid.lon):.6g}',
+        f'geo lat range: {np.nanmin(node_grid.lat):.6g} to {np.nanmax(node_grid.lat):.6g}',
+        f'local lon range: {np.nanmin(lon):.6g} to {np.nanmax(lon):.6g}',
+        f'local lat range: {np.nanmin(lat):.6g} to {np.nanmax(lat):.6g}',
+        f'max vertical/east-north residual: {residual.max():.6g}',
+        f'failing grid points: {bad.size}',
+    ]
+    for idx in worst:
+        lines.append(
+            f'  index {idx}: local lon/lat=({lon[idx]:.6g}, {lat[idx]:.6g}), '
+            f'geo lon/lat=({lon_G[idx]:.6g}, {lat_G[idx]:.6g}), residual={residual[idx]:.6g}'
+        )
+    lines.append('Try recreating the grid with auto_center=True, a manual center_shift, smaller L/W, or magnetic_north=True before run_inversion().')
+    return '\n'.join(lines)
+
+def create_grid(lon_center, lat_center, Apex, L=6000, W=6000, Lres=150., Wres=150., center_shift=(0, 0),
+                auto_center=False, auto_center_step=.25, auto_center_max=3., **grid_kwargs):
+    from secsy.cubedsphere import CSgrid, CSprojection
+    """Create the SECS node grid and the staggered evaluation grid.
+
+    Parameters
+    ----------
+    magnetic_north : bool, default: False
+        If ``True``, align the grid with quasi-dipole magnetic north instead
+        of the spacecraft track.
+    L : float, default: 6000
+        Grid length passed to ``CSgrid``.
+    W : float, default: 6000
+        Grid width passed to ``CSgrid``.
+    Lres : float, default: 150.0
+        Grid resolution along the length dimension.
+    Wres : float, default: 150.0
+        Grid resolution along the width dimension.
+    center_shift : tuple of float, default: (0, 0)
+        Longitude and latitude offset, in degrees, applied to the EZIE beam
+        footprint selected by :meth:`get_sat_vector`.
+    auto_center : bool, default: False
+        If ``True``, search nearby center shifts when secsy cannot compute
+        local-to-geographic vector rotations for the initial grid.
+    auto_center_step : float, default: 0.25
+        Center-shift search spacing in degrees.
+    auto_center_max : float, default: 3.0
+        Maximum absolute center shift searched in degrees.
+    **grid_kwargs
+        Additional options passed to ``CSgrid``.
+
+    Attributes
+    ----------
+    node_grid : secsy.cubedsphere.CSgrid
+        Grid used for SECS pole amplitudes.
+    eval_grid : secsy.cubedsphere.CSgrid
+        One-cell-larger grid used to evaluate modeled fields and currents.
+    grid_lon_center, grid_lat_center : float
+        Final grid center after applying ``center_shift`` or auto-centering.
+    grid_center_shift : tuple of float
+        Final longitude/latitude center shift.
+
+    Raises
+    ------
+    ValueError
+        If ``auto_center=True`` and no valid nearby center shift is found.
+    """
+
+    def build_grid(shift):
+        """Build node and evaluation grids for a candidate center shift.
+
+        Parameters
+        ----------
+        shift : tuple of float
+            Longitude and latitude offsets, in degrees, from
+            ``self.lon_center`` and ``self.lat_center``.
+
+        Returns
+        -------
+        tuple
+            ``(center_lon, center_lat, node_grid, eval_grid)``, where
+            ``node_grid`` contains the SECS pole locations and ``eval_grid``
+            is one cell larger for evaluating modeled fields and currents.
+        """
+        center_lon = lon_center + shift[0]
+        center_lat = lat_center + shift[1]
+        f1, f2= Apex.basevectors_qd(center_lat, center_lon%360, 0, coords='geo')
+        qd_north = f2/np.linalg.norm(f2)
+        East, North= qd_north[0], qd_north[1]
+        grid_proj= CSprojection((center_lon, center_lat), (East, North))
+
+
+        node_grid= CSgrid(grid_proj, L, W, Lres, Wres, **grid_kwargs)
+        # The evaluation grid is one cell larger so fields can be evaluated
+        # on cell edges while amplitudes remain on the SECS node grid.
+        xi_e  = np.hstack((node_grid.xi_mesh[0]    , node_grid.xi_mesh [0 , - 1] + node_grid.dxi )) - node_grid.dxi /2
+        eta_e = np.hstack((node_grid.eta_mesh[:, 0], node_grid.eta_mesh[-1,   0] + node_grid.deta)) - node_grid.deta/2
+        eval_grid= CSgrid(grid_proj,
+                            node_grid.L + node_grid.Lres, node_grid.W + node_grid.Wres,
+                            node_grid.Lres, node_grid.Wres,
+                            edges = (xi_e, eta_e), R = node_grid.R)
+        return center_lon, center_lat, node_grid, eval_grid
+    def valid_grid(node_grid):
+        """Check whether secsy can rotate local grid vectors to ENU.
+
+        Parameters
+        ----------
+        node_grid : secsy.cubedsphere.CSgrid
+            Candidate node grid to validate.
+
+        Returns
+        -------
+        bool
+            ``True`` if ``local2geo_enu_rotation`` succeeds for all node
+            locations; ``False`` if secsy raises an ``AssertionError``.
+        """
+        try:
+            node_grid.projection.local2geo_enu_rotation(node_grid.local_lon.flatten(), node_grid.local_lat.flatten())
+        except AssertionError:
+            return False
+        return True
+
+    center_shift = tuple(center_shift)
+    center_lon, center_lat, node_grid, eval_grid = build_grid(center_shift)
+    if auto_center and not valid_grid(node_grid):
+        # secsy can reject grids whose local ENU basis is numerically
+        # inconsistent near projection singularities. Prefer the smallest
+        # shift, with a slight bias away from the geographic pole.
+        candidates = []
+        steps = np.arange(-auto_center_max, auto_center_max + auto_center_step / 2, auto_center_step)
+        for dlon in steps:
+            for dlat in steps:
+                shift = (float(center_shift[0] + dlon), float(center_shift[1] + dlat))
+                if np.isclose(shift[0], center_shift[0]) and np.isclose(shift[1], center_shift[1]):
+                    continue
+                distance = np.hypot(shift[0] - center_shift[0], shift[1] - center_shift[1])
+                pole_direction = -np.sign(lat_center) * (shift[1] - center_shift[1])
+                candidates.append((distance, -pole_direction, shift))
+        candidates.sort(key=lambda item: (item[0], item[1], abs(item[2][0]), abs(item[2][1])))
+
+        original_diagnostics = _local2geo_rotation_diagnostics_for_grid(node_grid, center_lon, center_lat)
+        for _, _, shift in candidates:
+            candidate_lon, candidate_lat, candidate_node_grid, candidate_eval_grid = build_grid(shift)
+            if valid_grid(candidate_node_grid):
+                print('Adjusted grid center to avoid secsy local2geo_enu_rotation assertion.')
+                print(original_diagnostics)
+                print(f'Using center_shift={shift} instead of {center_shift}.')
+                center_shift = shift
+                center_lon, center_lat = candidate_lon, candidate_lat
+                node_grid, eval_grid = candidate_node_grid, candidate_eval_grid
+                break
+        else:
+            grid_lon_center = center_lon
+            grid_lat_center = center_lat
+            grid_center_shift = center_shift
+            node_grid = node_grid
+            eval_grid = eval_grid
+            raise ValueError(
+                original_diagnostics
+                + f'\nNo valid center shift found within +/-{auto_center_max} degrees at {auto_center_step} degree resolution.'
+            )
+
+    grid_lon_center = center_lon
+    grid_lat_center = center_lat
+    grid_center_shift = center_shift
+    return node_grid, eval_grid
