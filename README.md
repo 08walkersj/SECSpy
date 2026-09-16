@@ -9,6 +9,12 @@ The package also includes an EZIE/SuperMAG workflow for creating event-centred
 cubed-sphere grids, downloading SuperMAG data, running SECS inversions, and
 making pass/event plots.
 
+
+
+## Usage Policy
+For inverions complimenting the EZIE mission and satellites please acknowledge us appropriately:
+"For the SECS inversion of ground magnetometer data used for comparison with EZIE, we gratefully acknowledge the Magnetic Network of Ireland (MagIE), supported by the Dublin Institute for Advanced Studies (DIAS), Met Éireann, and Geological Survey Ireland (GSI)."
+
 ## Installation
 
 Install from a local checkout:
