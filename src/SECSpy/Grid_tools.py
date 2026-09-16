@@ -95,7 +95,7 @@ def ImproveGrid(lon_centre, lat_centre, MagLon, MagLat, GridSpacing_km, length, 
         A = Apex(date=date)
         f1, f2 = A.basevectors_qd(lat_centre, lon_centre, 0, coords = 'geo')
         qd_north = f2 / np.linalg.norm(f2)
-        East, North= qd_north[0], qd_north[1]
+        East, North= qd_north[1], -qd_north[0]
     else:
         East, North= east, north
     # node_grid= CSgrid((lon_centre, lat_centre), [East,North], height, length, GridSpacing_km, GridSpacing_km)
@@ -116,7 +116,7 @@ def ImproveGrid(lon_centre, lat_centre, MagLon, MagLat, GridSpacing_km, length, 
                  A = Apex(date=date)
                  f1, f2 = A.basevectors_qd(lat_centre+dc, lon_centre+d, 0, coords = 'geo')
                  qd_north = f2 / np.linalg.norm(f2)
-                 East, North= qd_north[0], qd_north[1]
+                 East, North= qd_north[1], -qd_north[0]
              else:
                  East, North= east, north
              Gridproj= CS.CSprojection((lon_centre+d, lat_centre+dc), [East, North])
@@ -274,7 +274,7 @@ def create_grid(lon_center, lat_center, Apex, L=6000, W=6000, Lres=150., Wres=15
         center_lat = lat_center + shift[1]
         f1, f2= Apex.basevectors_qd(center_lat, center_lon%360, 0, coords='geo')
         qd_north = f2/np.linalg.norm(f2)
-        East, North= qd_north[0], qd_north[1]
+        East, North= qd_north[1], -qd_north[0]
         grid_proj= CSprojection((center_lon, center_lat), (East, North))
 
 
@@ -352,3 +352,136 @@ def create_grid(lon_center, lat_center, Apex, L=6000, W=6000, Lres=150., Wres=15
     grid_lat_center = center_lat
     grid_center_shift = center_shift
     return node_grid, eval_grid
+def shift_grid(node_grid_dic, glon, glat, Apex, shift_lat=False):
+    """Shift a saved cubed-sphere grid and rebuild its evaluation grid.
+
+    Parameters
+    ----------
+    node_grid_dic : dict
+        Dictionary representation of the node grid, such as one returned by
+        ``CSgrid.to_dictionary()``.
+    glon : int/float (Degrees)
+        Geographic longitude used to shift the grid.
+    glat : int/float (Degrees)
+        Geographic latitude used to shift the grid.
+    Apex : apexpy.Apex
+        Apex object used to convert between geographic and apex coordinates.
+    shift_lat : bool, optional
+        If ``True``, shift both geographic longitude and latitude directly.
+        If ``False``, keep the original apex latitude and shift only to the
+        apex longitude associated with ``glon`` and ``glat``. The default is
+        ``False``.
+
+    Returns
+    -------
+    node_grid : secsy.cubedsphere.CSgrid
+        Shifted node grid used for SECS pole amplitudes.
+    eval_grid : secsy.cubedsphere.CSgrid
+        One-cell-larger grid used to evaluate modeled fields and currents.
+    """
+    from secsy.cubedsphere import CSgrid, CSprojection, from_dictionary
+    node_grid_dic= node_grid_dic.copy()
+    if shift_lat:
+        node_grid_dic['projection']['position']= glon, glat
+    else:
+        # Convert the requested geographic position to apex longitude, then
+        # project it back at the original apex latitude.
+        lon_cent, lat_cent= node_grid_dic['projection']['position']
+        mlat, mlon= Apex.geo2apex(lat_cent, lon_cent, height=0)
+        mlat_new, mlon_new= Apex.geo2apex(glat, glon, height=0)
+        glat, glon, _= Apex.apex2geo(mlat, mlon_new, height=0)
+        node_grid_dic['projection']['position']= glon, glat
+    node_grid= from_dictionary(node_grid_dic)
+    # The evaluation grid is one cell larger so fields can be evaluated on
+    # cell edges while amplitudes remain on the SECS node grid.
+    xi_e  = np.hstack((node_grid.xi_mesh[0]    , node_grid.xi_mesh [0 , - 1] + node_grid.dxi )) - node_grid.dxi /2
+    eta_e = np.hstack((node_grid.eta_mesh[:, 0], node_grid.eta_mesh[-1,   0] + node_grid.deta)) - node_grid.deta/2
+    eval_grid= CSgrid(node_grid.projection,
+                        node_grid.L + node_grid.Lres, node_grid.W + node_grid.Wres,
+                        node_grid.Lres, node_grid.Wres,
+                        edges = (xi_e, eta_e), R = node_grid.R)
+    return node_grid, eval_grid
+def _recalculate_cs_vectors(ds, grid):
+    """Recalculate cubed-sphere vector components after changing grid coordinates.
+
+    Parameters
+    ----------
+    ds : xarray.Dataset
+        Dataset containing geographic east/north vector components on
+        ``xi``/``eta`` coordinates.
+    grid : secsy.cubedsphere.CSgrid
+        Grid whose projection should be used for the cubed-sphere components.
+    """
+    def project_pair(east_name, north_name, xi_name, eta_name):
+        """Project one east/north vector pair and restore its original dimensions."""
+        extra_dims = [dim for dim in ds[east_name].dims if dim not in ['xi', 'eta']]
+        extra_shape = [ds[east_name].sizes[dim] for dim in extra_dims]
+
+        # secsy expects flat vectors and matching flat lon/lat arrays. Keep
+        # time or other non-grid dimensions last so each grid point is repeated
+        # for every extra coordinate value.
+        east = ds[east_name].transpose('eta', 'xi', *extra_dims).values.reshape(grid.size, -1)
+        north = ds[north_name].transpose('eta', 'xi', *extra_dims).values.reshape(grid.size, -1)
+        n_extra = east.shape[1]
+        lon = np.repeat(np.asarray(ds['lon']).T.reshape(-1), n_extra)
+        lat = np.repeat(np.asarray(ds['lat']).T.reshape(-1), n_extra)
+
+        xi_values, eta_values = grid.projection.vector_cube_projection(
+            east.reshape(-1),
+            north.reshape(-1),
+            lon,
+            lat,
+            return_xi_eta=False,
+        )
+
+        # Restore xarray's (xi, eta, ...) coordinate order after secsy's
+        # flattened (eta, xi, ...) calculation order.
+        projected_shape = (*grid.shape, *extra_shape)
+        axes = (1, 0, *range(2, len(projected_shape)))
+        dims = ('xi', 'eta', *extra_dims)
+        ds[xi_name] = (dims, xi_values.reshape(projected_shape).transpose(axes))
+        ds[eta_name] = (dims, eta_values.reshape(projected_shape).transpose(axes))
+
+    if {'Be', 'Bn'}.issubset(ds):
+        project_pair('Be', 'Bn', 'Be_cs', 'Bn_cs')
+    if {'Je', 'Jn'}.issubset(ds):
+        project_pair('Je', 'Jn', 'Je_cs', 'Jn_cs')
+
+def change_xarray_grid(ds, new_grid):
+    """Replace the cubed-sphere grid coordinates in an xarray dataset.
+
+    Parameters
+    ----------
+    ds : xarray.Dataset
+        Dataset with ``xi``/``eta`` grid coordinates and cubed-sphere grid
+        metadata in ``attrs['cs_grid']``.
+    new_grid : secsy.cubedsphere.CSgrid
+        Grid whose coordinates and dictionary representation will replace the
+        existing grid information in ``ds``.
+
+    Returns
+    -------
+    ds : xarray.Dataset
+        Copy of ``ds`` with coordinates reassigned to ``new_grid`` and
+        ``attrs['cs_grid']`` updated.
+    """
+    import json
+
+    ds= ds.copy()
+    # xarray stores the two-dimensional geographic coordinates as
+    # (xi, eta), while secsy grid arrays are indexed as (eta, xi).
+    new_coords= dict(xi=new_grid.xi[0,:],
+                        eta=new_grid.eta[:,0],
+                        lon=(['xi', 'eta'], new_grid.lon.T),
+                        lat=(['xi', 'eta'], new_grid.lat.T),
+                        xi_edge=np.arange(new_grid.xi_mesh.shape[1]),
+                        eta_edge=np.arange(new_grid.eta_mesh.shape[0]),
+                        xi_mesh=(['xi_edge', 'eta_edge'], new_grid.xi_mesh.T),
+                        eta_mesh=(['xi_edge', 'eta_edge'], new_grid.eta_mesh.T))
+    ds = ds.assign_coords(new_coords)
+    _recalculate_cs_vectors(ds, new_grid)
+
+    # Keep the serialized grid metadata consistent with the reassigned
+    # coordinates so the dataset can be reconstructed later.
+    ds.attrs['cs_grid']= json.dumps(new_grid.to_dictionary())
+    return ds

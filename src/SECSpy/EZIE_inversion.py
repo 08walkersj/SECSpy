@@ -1116,7 +1116,7 @@ class inversion(object):
             # SECS amplitudes live on the node grid and are later divided by
             # cell area for equivalent current-density style plots.
             amps_= xr.Dataset(data_vars=dict(Amplitude_df=(['time', 'xi', 'eta'], [DF_amps.reshape(self.node_grid.shape).T], {'units': 'A'}),
-                                            Area=(['xi', 'eta'], self.node_grid.A.T, {'units': 'm^2'})), 
+                                            Area=(['xi', 'eta'], self.node_grid.A.T, {'units': 'km^2'})), 
                     coords= dict(xi=self.node_grid.xi[0,:],
                                     eta=self.node_grid.eta[:,0],
                                     lon=(['xi', 'eta'], self.node_grid.lon.T),

@@ -654,7 +654,7 @@ class SECS:
             The requested ``system`` key is replaced with the regularised
             fitting matrix.
         """
-        import tqdm
+        from tqdm import tqdm
         Le, Ln= grid.get_Le_Ln()
         # Project finite-difference operators onto magnetic east using the
         # quasi-dipole base vectors at each node.
@@ -1469,17 +1469,20 @@ class SECS:
         node_grid : secsy cubedsphere grid
             Grid on which the SECS amplitudes are defined.
         mag_code : list or numpy.ndarray, optional
-            Magnetometer station identifiers to store as dataset metadata.
+            Magnetometer station identifiers to store as the ``iaga``
+            coordinate.
         meas_glon : list or numpy.ndarray, optional
-            Magnetometer geographic longitudes to store as dataset metadata.
+            Magnetometer geographic longitudes to store as an ``iaga``
+            coordinate.
         meas_glat : list or numpy.ndarray, optional
-            Magnetometer geographic latitudes to store as dataset metadata.
+            Magnetometer geographic latitudes to store as an ``iaga``
+            coordinate.
 
         Returns
         -------
         ds : xarray.Dataset
             Dataset containing SECS amplitudes on ``(xi, eta, time)`` together
-            with grid coordinates and cell areas.
+            with grid coordinates, grid-edge mesh coordinates and cell areas.
         """
         import xarray as xr
         import json
@@ -1487,21 +1490,40 @@ class SECS:
         # Matrix products return flattened grid points by time; xarray stores
         # this output in cubed-sphere coordinate order.
         amps=amps.reshape((*node_grid.shape, -1)).transpose(1, 0, 2)
-        attrs= {key:val for key, val in\
-                zip(['mag_code', 'meas_glon', 'meas_glat'], [mag_code, meas_glon, meas_glat])}
+        coords= dict(xi=node_grid.xi[0,:],
+                        eta=node_grid.eta[:,0],
+                        lon=(['xi', 'eta'], node_grid.lon.T),
+                        lat=(['xi', 'eta'], node_grid.lat.T),
+                        xi_edge=np.arange(node_grid.xi_mesh.shape[1]),
+                        eta_edge=np.arange(node_grid.eta_mesh.shape[0]),
+                        xi_mesh=(['xi_edge', 'eta_edge'], node_grid.xi_mesh.T),
+                        eta_mesh=(['xi_edge', 'eta_edge'], node_grid.eta_mesh.T),
+                        time=time)
+        # The mesh arrays describe cell edges/corners and are one element
+        # larger than the data grid, so they use separate edge dimensions.
+        # Station metadata is indexed data, so store it as coordinates rather
+        # than serialising it into global attributes.
+        if mag_code is not None:
+            coords['iaga']= mag_code
+        elif meas_glon is not None:
+            coords['iaga']= np.arange(len(meas_glon))
+        elif meas_glat is not None:
+            coords['iaga']= np.arange(len(meas_glat))
+        if meas_glon is not None:
+            coords['meas_glon']= (['iaga'], meas_glon)
+        if meas_glat is not None:
+            coords['meas_glat']= (['iaga'], meas_glat)
+        attrs= {}
         # Store the full grid description so the dataset is self-describing
         # when written to netCDF and loaded without the original grid object.
         attrs['cs_grid'] = json.dumps(node_grid.to_dictionary())
-        return xr.Dataset(data_vars=dict(Amplitude_df=(['xi', 'eta', 'time'], amps, {'units': 'A'}),
-                                                Area=(['xi', 'eta'], node_grid.A.T, {'units': 'm^2'})), 
-                        coords= dict(xi=node_grid.xi[0,:],
-                                        eta=node_grid.eta[:,0],
-                                        lon=(['xi', 'eta'], node_grid.lon.T),
-                                        lat=(['xi', 'eta'], node_grid.lat.T),
-                                        time=time),
+        return xr.Dataset(data_vars=dict(Amplitude=(['xi', 'eta', 'time'], amps, {'units': 'A'}),
+                                                Area=(['xi', 'eta'], node_grid.A.T, {'units': 'km^2'})), 
+                        coords= coords,
                         attrs=attrs
                         )
-    def estimated_to_xarray(self, time, eval_grid, amps=None, data=None, mag_code=None, meas_glon=None, meas_glat=None,
+    def estimated_to_xarray(self, time, eval_grid, node_grid, amps=None, data=None, mag_code=None, meas_glon=None,
+                            meas_glat=None, meas_xi=None, meas_eta=None,
                             system='divergence-free', telluric=False):
         """
         Evaluate modeled magnetic field and equivalent current on a grid.
@@ -1520,11 +1542,20 @@ class SECS:
             Magnetometer data with shape ``(N, M)`` used when ``amps`` is not
             supplied.
         mag_code : list or numpy.ndarray, optional
-            Magnetometer station identifiers to store as dataset metadata.
+            Magnetometer station identifiers to store as the ``iaga``
+            coordinate.
         meas_glon : list or numpy.ndarray, optional
-            Magnetometer geographic longitudes to store as dataset metadata.
+            Magnetometer geographic longitudes to store as an ``iaga``
+            coordinate.
         meas_glat : list or numpy.ndarray, optional
-            Magnetometer geographic latitudes to store as dataset metadata.
+            Magnetometer geographic latitudes to store as an ``iaga``
+            coordinate.
+        meas_xi : list or numpy.ndarray, optional
+            Magnetometer cubed-sphere x-coordinates to store as an ``iaga``
+            coordinate.
+        meas_eta : list or numpy.ndarray, optional
+            Magnetometer cubed-sphere y-coordinates to store as an ``iaga``
+            coordinate.
         system : string, optional
             Specifies the system type either 'divergence-free' or 'curl-free'.
         telluric : bool, optional
@@ -1541,8 +1572,8 @@ class SECS:
         -------
         ds : xarray.Dataset
             Dataset containing ``Br``, ``Be``, ``Bn``, ``Je`` and ``Jn`` on
-            ``(xi, eta, time)`` with magnetic field in nT and current in
-            microamps per square meter.
+            ``(xi, eta, time)`` with grid-edge mesh coordinates, magnetic field
+            in nT and sheet current in milliamps per meter.
         """
         import xarray as xr
         import json
@@ -1554,29 +1585,76 @@ class SECS:
             amps= self.time_inversion(data, system=system)
         # Evaluation matrices operate on all time columns at once. This is
         # equivalent to looping over amps[:, i] for each time step.
-        Br, Be, Bn= [G@amps for G in self.eval_G_Matrix_B(system=system)[i]]
+        Bu, Be, Bn= [G@amps for G in self.eval_G_Matrix_B(system=system)[i]]
+        def _projection_lon_lat(east):
+            lon = np.asarray(eval_grid.lon).reshape(-1)
+            lat = np.asarray(eval_grid.lat).reshape(-1)
+            east = np.asarray(east)
+            n_times = 1 if east.ndim == 1 else east.shape[1]
+            return np.repeat(lon, n_times), np.repeat(lat, n_times)
+
+        projection_lon, projection_lat = _projection_lon_lat(Be)
+        Be_cs, Bn_cs=  node_grid.projection.vector_cube_projection(Be, Bn, projection_lon, projection_lat,
+                                                                   return_xi_eta=False)
         Je, Jn= [G@amps for G in self.eval_G_Matrix_J(system=system)]
+        projection_lon, projection_lat = _projection_lon_lat(Je)
+        Je_cs, Jn_cs=  node_grid.projection.vector_cube_projection(Je, Jn, projection_lon, projection_lat,
+                                                                   return_xi_eta=False)
         # Reshape from flattened evaluation points to (xi, eta, time). Time
         # remains the final axis and is not interleaved with grid coordinates.
-        Br= Br.reshape((*eval_grid.shape, -1)).transpose(1, 0, 2)
+        Bu= Bu.reshape((*eval_grid.shape, -1)).transpose(1, 0, 2)
         Be= Be.reshape((*eval_grid.shape, -1)).transpose(1, 0, 2)
         Bn= Bn.reshape((*eval_grid.shape, -1)).transpose(1, 0, 2)
+        Be_cs= Be_cs.reshape((*eval_grid.shape, -1)).transpose(1, 0, 2)
+        Bn_cs= Bn_cs.reshape((*eval_grid.shape, -1)).transpose(1, 0, 2)
         Je= Je.reshape((*eval_grid.shape, -1)).transpose(1, 0, 2)
         Jn= Jn.reshape((*eval_grid.shape, -1)).transpose(1, 0, 2)
-        attrs= {key:val for key, val in\
-                zip(['mag_code', 'meas_glon', 'meas_glat'], [mag_code, meas_glon, meas_glat])}
+        Je_cs= Je_cs.reshape((*eval_grid.shape, -1)).transpose(1, 0, 2)
+        Jn_cs= Jn_cs.reshape((*eval_grid.shape, -1)).transpose(1, 0, 2)
+        coords= dict(xi=eval_grid.xi[0,:],
+                        eta=eval_grid.eta[:,0],
+                        lon=(['xi', 'eta'], eval_grid.lon.T),
+                        lat=(['xi', 'eta'], eval_grid.lat.T),
+                        xi_edge=np.arange(eval_grid.xi_mesh.shape[1]),
+                        eta_edge=np.arange(eval_grid.eta_mesh.shape[0]),
+                        xi_mesh=(['xi_edge', 'eta_edge'], eval_grid.xi_mesh.T),
+                        eta_mesh=(['xi_edge', 'eta_edge'], eval_grid.eta_mesh.T),
+                        time=time)
+        # The mesh arrays describe cell edges/corners and are one element
+        # larger than the data grid, so they use separate edge dimensions.
+        # Station metadata is indexed data, so store it as coordinates rather
+        # than serialising it into global attributes.
+        if mag_code is not None:
+            coords['iaga']= mag_code
+        elif meas_glon is not None:
+            coords['iaga']= np.arange(len(meas_glon))
+        elif meas_glat is not None:
+            coords['iaga']= np.arange(len(meas_glat))
+        elif meas_xi is not None:
+            coords['iaga']= np.arange(len(meas_xi))
+        elif meas_eta is not None:
+            coords['iaga']= np.arange(len(meas_eta))
+        if meas_glon is not None:
+            coords['meas_glon']= (['iaga'], meas_glon)
+        if meas_glat is not None:
+            coords['meas_glat']= (['iaga'], meas_glat)
+        if meas_xi is not None:
+            coords['meas_xi']= (['iaga'], meas_xi)
+        if meas_eta is not None:
+            coords['meas_eta']= (['iaga'], meas_eta)
+        attrs= {}
         # Preserve the evaluation grid definition in the output metadata.
         attrs['cs_grid'] = json.dumps(eval_grid.to_dictionary())
-        return xr.Dataset(data_vars=dict(Br=(['xi', 'eta', 'time'], Br*1e9, {'units': 'nT'}),
+        return xr.Dataset(data_vars=dict(Bu=(['xi', 'eta', 'time'], Bu*1e9, {'units': 'nT'}),
                                         Be=(['xi', 'eta', 'time'], Be*1e9, {'units': 'nT'}),
                                         Bn=(['xi', 'eta', 'time'], Bn*1e9, {'units': 'nT'}),
-                                        Je=(['xi', 'eta', 'time'], Je*1e6, {'units': 'uA/m^2'}),
-                                        Jn=(['xi', 'eta', 'time'], Jn*1e6, {'units': 'uA/m^2'}),
-                                        Area=(['xi', 'eta'], eval_grid.A.T, {'units': 'm^2'})), 
-                        coords= dict(xi=eval_grid.xi[0,:],
-                                        eta=eval_grid.eta[:,0],
-                                        lon=(['xi', 'eta'], eval_grid.lon.T),
-                                        lat=(['xi', 'eta'], eval_grid.lat.T),
-                                        time=time),
+                                        Be_cs=(['xi', 'eta', 'time'], Be_cs*1e9, {'units': 'nT'}),
+                                        Bn_cs=(['xi', 'eta', 'time'], Bn_cs*1e9, {'units': 'nT'}),
+                                        Je=(['xi', 'eta', 'time'], Je*1e3, {'units': 'mA/m'}),
+                                        Jn=(['xi', 'eta', 'time'], Jn*1e3, {'units': 'mA/m'}),
+                                        Je_cs=(['xi', 'eta', 'time'], Je_cs*1e3, {'units': 'mA/m'}),
+                                        Jn_cs=(['xi', 'eta', 'time'], Jn_cs*1e3, {'units': 'mA/m'}),
+                                        Area=(['xi', 'eta'], eval_grid.A.T, {'units': 'km^2'})), 
+                        coords= coords,
                         attrs=attrs
                         )

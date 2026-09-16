@@ -505,3 +505,27 @@ def format_data_vector(data):
             sort=False,))
 
     return data
+
+
+def read_data_vector(file):
+    """Read a formatted SuperMAG data-vector CSV.
+
+    This is the matching loader for a DataFrame produced by
+    :func:`format_data_vector` and saved with ``data.to_csv(file)``. It restores
+    the two-level column index written by pandas for station/component columns
+    and parses the first column as the datetime index.
+
+    Parameters
+    ----------
+    file : str or path-like
+        CSV file produced by saving the output of :func:`format_data_vector`.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Time-indexed SuperMAG data vector with a two-level column index. The
+        first column level contains quantities such as ``glat``, ``glon``,
+        ``East_ground``, ``South_ground``, ``Up_ground``, ``xi``, and ``eta``;
+        the second column level contains station IAGA codes.
+    """
+    return pd.read_csv(file, header=[0, 1], index_col=0, parse_dates=True)
